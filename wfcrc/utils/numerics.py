@@ -180,7 +180,9 @@ def _log_clamp_saturation(lo: float, hi: float) -> None:
         _logger.debug("clamp saturated at least one value to [%s, %s]", lo, hi)
 
 
-def safe_div(a: ArrayLike, b: ArrayLike, eps: float = DEFAULT_ETA_MIN) -> NDArray[np.float64]:
+def safe_div(
+    a: ArrayLike, b: ArrayLike, eps: float = DEFAULT_ETA_MIN
+) -> np.float64 | NDArray[np.float64]:
     """Divide ``a / b``, guarding against division by (near-)zero ``b``.
 
     The magnitude of ``b`` is floored at ``eps`` while preserving its sign
@@ -193,7 +195,9 @@ def safe_div(a: ArrayLike, b: ArrayLike, eps: float = DEFAULT_ETA_MIN) -> NDArra
         eps: Minimum allowed magnitude for the denominator.
 
     Returns:
-        ``a / b`` with ``|b|`` floored at ``eps``.
+        ``a / b`` with ``|b|`` floored at ``eps``, as a ``float64`` scalar if
+        both ``a`` and ``b`` were scalars, else an array (consistent with
+        :func:`logsumexp`, :func:`clamp`, and :func:`quantile`).
 
     Raises:
         ValueError: If ``a``/``b`` contain NaN/inf, or ``eps <= 0``.
@@ -207,7 +211,13 @@ def safe_div(a: ArrayLike, b: ArrayLike, eps: float = DEFAULT_ETA_MIN) -> NDArra
 
     sign = np.where(b_arr >= 0, 1.0, -1.0)
     safe_b = np.where(np.abs(b_arr) < eps, sign * eps, b_arr)
-    return np.asarray(a_arr / safe_b, dtype=np.float64)
+    result = np.asarray(a_arr / safe_b, dtype=np.float64)
+
+    a_is_scalar = np.isscalar(a) or isinstance(a, np.generic)
+    b_is_scalar = np.isscalar(b) or isinstance(b, np.generic)
+    if a_is_scalar and b_is_scalar:
+        return np.float64(result)
+    return result
 
 
 def quantile(

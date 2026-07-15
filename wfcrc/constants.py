@@ -15,8 +15,19 @@ from typing import Final
 #: Default content-hash algorithm (must be a name accepted by ``hashlib.new``).
 DEFAULT_HASH_ALGO: Final[str] = "sha256"
 
-#: Default number of leading hex characters kept from a full digest.
+#: Default number of leading hex characters kept from a full digest. Used for
+#: short, human-facing hashes (e.g. :meth:`wfcrc.config.schema.Config.hash`)
+#: where brevity matters more than astronomical collision resistance.
 DEFAULT_HASH_WIDTH: Final[int] = 16
+
+#: Hex digest width for cache keys (:func:`wfcrc.utils.cache.make_key`) — the
+#: full, untruncated SHA-256 digest (64 hex chars = 256 bits). Cache keys
+#: accumulate across many long-running research sweeps (scores, loss tables,
+#: dual estimates), where a truncated width's collision probability is no
+#: longer negligible; a key collision there would silently serve a wrong
+#: cached value, so this stays untruncated rather than reusing
+#: ``DEFAULT_HASH_WIDTH``.
+CACHE_KEY_HASH_WIDTH: Final[int] = 64
 
 #: Default directory (relative to a run/working directory) for cached artifacts.
 DEFAULT_CACHE_DIR: Final[str] = "cache"

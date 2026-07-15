@@ -65,6 +65,44 @@ wfcrc/
   pyproject.toml
 ```
 
+## Blueprint layout vs. actual repository layout
+
+The frozen Implementation Blueprint (§1) specifies a `src/wfcrc/` layout
+with subpackages named `data/`, `sets/`, `losses/`, `families/`,
+`calibration/`, `verify/`, `metrics/`, `viz/`, `runner/`. The repository's
+actual scaffold — created before MS1 and treated as fixed context per the
+project brief ("the folder structure already exists... your task is not to
+redesign anything") — uses a **flat** layout (`wfcrc/wfcrc/`, no `src/`)
+with placeholder directories under some **different names**:
+
+| Blueprint (§1) | Actual repository | Status in MS1 |
+|---|---|---|
+| `src/wfcrc/data/` | `wfcrc/datasets/` | empty placeholder |
+| `src/wfcrc/sets/` | `wfcrc/prediction_sets/` | empty placeholder |
+| `src/wfcrc/losses/` | `wfcrc/losses/` | empty placeholder |
+| `src/wfcrc/families/` | `wfcrc/ambiguity/` | empty placeholder |
+| `src/wfcrc/calibration/` | `wfcrc/calibration/` | empty placeholder |
+| `src/wfcrc/metrics/` | `wfcrc/evaluation/` | empty placeholder |
+| `src/wfcrc/viz/` | `wfcrc/visualization/` | empty placeholder |
+| `src/wfcrc/verify/` | *(no equivalent yet)* | not yet created |
+| `src/wfcrc/runner/` | *(no equivalent yet)* | not yet created |
+| — | `wfcrc/models/` | empty placeholder, no Blueprint equivalent |
+| `src/wfcrc/config/`, `src/wfcrc/utils/` | `wfcrc/config/`, `wfcrc/utils/` | **implemented in MS1**, names match |
+
+**Resolution: this is a documented, deliberate divergence, not a defect to
+silently fix later.** MS1 did not rename any of these directories and did
+not implement anything inside them (all remain empty, per MS1's
+infrastructure-only scope). When a later milestone (MS2 for
+`data`/`sets`/`losses`, MS3 for `families`/`calibration`, MS4 for
+`verify`/`metrics`) begins implementing one of these subpackages, that
+milestone's own implementation spec should confirm the target directory
+name against this table rather than assuming the Blueprint's name is
+literal. Renaming the placeholder directories to match the Blueprint
+exactly would be a safe, low-risk cleanup if done *before* any module
+inside them is implemented — but it is out of scope for a documentation
+reconciliation and was not judged necessary to resolve here, since an empty
+directory carries no behavior to break either way.
+
 ## Why `data`/`model`/`sets`/`loss` config sections are generic in MS1
 
 The frozen Implementation Blueprint defines concrete registries

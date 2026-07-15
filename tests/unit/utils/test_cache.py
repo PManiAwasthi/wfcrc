@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from wfcrc.constants import CACHE_KEY_HASH_WIDTH
 from wfcrc.exceptions import CacheError
 from wfcrc.utils.cache import Cache, make_key
 
@@ -17,6 +18,14 @@ def test_make_key_is_deterministic() -> None:
 
 def test_make_key_distinguishes_different_parts() -> None:
     assert make_key("a", 1) != make_key("a", 2)
+
+
+def test_make_key_uses_full_collision_resistant_width() -> None:
+    # Cache keys must not use content_hash's short default width: a cache
+    # accumulates entries across long-running sweeps, where a truncated
+    # digest's collision probability is no longer negligible.
+    assert CACHE_KEY_HASH_WIDTH == 64
+    assert len(make_key("a", 1)) == CACHE_KEY_HASH_WIDTH
 
 
 def test_cache_miss_then_hit(tmp_path: Path) -> None:

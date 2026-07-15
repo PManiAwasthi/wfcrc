@@ -38,8 +38,18 @@ and reproducibility systems work.
 
 ## Requirements
 
-Python 3.12+. See [`pyproject.toml`](pyproject.toml) for pinned dependency
-ranges.
+Python 3.12+. See [`pyproject.toml`](pyproject.toml) for dependency ranges
+and [`requirements/lock.txt`](requirements/lock.txt) for the exact pinned
+environment (`make install-locked`).
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, coding standards, and
+the pre-PR checklist. See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
+
+## Citation
+
+See [`CITATION.cff`](CITATION.cff).
 
 ## License
 

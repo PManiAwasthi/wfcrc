@@ -37,9 +37,12 @@ through `rng_for`.
 keyed by a hash of *all* of a computation's inputs
 ([`make_key`][wfcrc.utils.cache.make_key]), so a cache entry can never be
 silently served for different inputs — a stale hit would require a hash
-collision. Writes are atomic
-([`wfcrc.utils.io.atomic_write`][wfcrc.utils.io.atomic_write]): a crash
-mid-write never leaves a partially written cache entry.
+collision. `make_key` uses the full, untruncated 256-bit SHA-256 digest
+(`CACHE_KEY_HASH_WIDTH`), not `content_hash`'s shorter human-facing default,
+because cache keys accumulate across long-running research sweeps where a
+truncated digest's collision probability is no longer negligible. Writes are
+atomic ([`wfcrc.utils.io.atomic_write`][wfcrc.utils.io.atomic_write]): a
+crash mid-write never leaves a partially written cache entry.
 
 ## 4. Structured, diffable run logs
 
@@ -48,6 +51,38 @@ one JSON-lines event per line, with a fixed field order and the timestamp
 isolated in its own field — so two runs with identical inputs produce
 byte-identical event streams once timestamps are stripped ("golden-diffable"),
 letting CI compare log output across runs deterministically.
+
+## 5. Pinned environment
+
+`requirements/lock.txt` (repository root) is the fully pinned
+dependency closure for `pip install -e ".[dev,docs]"` — every package at an
+exact version, generated via `pip freeze --exclude-editable`. It is the
+artifact that lets a specific past result be reproduced in the *exact*
+environment that produced it, per the Implementation Blueprint's
+reproducibility protocol (§17: "pinned environment") and the MS1
+Implementation Specification (C7: "pyproject.toml + lockfile (pinned
+deps)").
+
+```bash
+make install-locked   # reproduce the exact pinned environment
+make lock              # regenerate the lockfile after a deliberate upgrade
+```
+
+`pyproject.toml` intentionally keeps *loose* compatible-release ranges
+(`numpy>=1.26,<3`, etc.) rather than the lockfile's exact pins — this is a
+deliberate split, not an inconsistency:
+
+- **CI** installs from the ranges (`pip install -e ".[dev]"`). This is what
+  actually catches a breaking upstream release early, which is the point of
+  continuous integration.
+- **The lockfile** is for exactly reproducing one specific environment on
+  demand (e.g. to re-run an old experiment), not for CI's day-to-day
+  regression signal.
+
+The lockfile was generated on the primary development platform (Windows,
+Python 3.12); a small number of pure-Python packages may resolve
+differently on other platforms, which is why CI does not consume the
+lockfile directly.
 
 ## Provenance capture (manifests)
 

@@ -19,6 +19,7 @@ from typing import Any
 
 import numpy as np
 
+from wfcrc.constants import CACHE_KEY_HASH_WIDTH
 from wfcrc.exceptions import CacheError, SerializationError
 from wfcrc.utils.io import content_hash, ensure_dir, load_array, load_json, save_array, save_json
 
@@ -29,6 +30,12 @@ _logger = logging.getLogger(__name__)
 
 def make_key(*parts: Any) -> str:
     """Derive a stable cache key from arbitrary JSON-serializable ``parts``.
+
+    Uses the full, untruncated SHA-256 digest
+    (:data:`wfcrc.constants.CACHE_KEY_HASH_WIDTH`) rather than
+    :func:`~wfcrc.utils.io.content_hash`'s shorter default width, since
+    cache keys accumulate across long-running research sweeps where
+    collision probability at a truncated width is no longer negligible.
 
     Args:
         *parts: Any number of JSON-serializable values (dict/list/scalars/
@@ -41,7 +48,7 @@ def make_key(*parts: Any) -> str:
     Raises:
         TypeError: If any part is not JSON-serializable.
     """
-    return content_hash(list(parts))
+    return content_hash(list(parts), width=CACHE_KEY_HASH_WIDTH)
 
 
 class Cache:

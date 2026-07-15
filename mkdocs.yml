@@ -1,6 +1,6 @@
 site_name: wfcrc
 site_description: Worst-case Family Conformal Risk Control — reproducible research repository
-repo_url: https://github.com/wfcrc/wfcrc
+repo_url: https://github.com/PManiAwasthi/wfcrc
 edit_uri: edit/main/docs/
 
 theme:

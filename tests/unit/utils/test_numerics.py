@@ -140,6 +140,25 @@ def test_safe_div_rejects_nonpositive_eps() -> None:
         safe_div(1.0, 1.0, eps=0.0)
 
 
+def test_safe_div_scalar_inputs_return_scalar() -> None:
+    # Consistent with logsumexp/clamp/quantile: scalar in, scalar out.
+    result = safe_div(1.0, 2.0)
+    assert isinstance(result, np.float64)
+    assert result.shape == ()
+
+
+def test_safe_div_array_input_returns_array() -> None:
+    result = safe_div(np.array([1.0, 2.0]), np.array([2.0, 4.0]))
+    assert isinstance(result, np.ndarray)
+    np.testing.assert_allclose(result, [0.5, 0.5])
+
+
+def test_safe_div_mixed_scalar_and_array_returns_array() -> None:
+    result = safe_div(1.0, np.array([2.0, 4.0]))
+    assert isinstance(result, np.ndarray)
+    np.testing.assert_allclose(result, [0.5, 0.25])
+
+
 def test_quantile_matches_numpy_on_known_array() -> None:
     x = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     for q in (0.0, 0.25, 0.5, 0.75, 1.0):
