@@ -1,0 +1,10 @@
+# Development dependencies: linting, formatting, type checking, testing.
+# Kept in sync with the [project.optional-dependencies.dev] table in pyproject.toml.
+-r base.txt
+ruff>=0.6.0
+black>=24.8.0
+mypy>=1.11.0
+pytest>=8.3.0
+pytest-cov>=5.0.0
+pre-commit>=3.8.0
+types-PyYAML>=6.0.12

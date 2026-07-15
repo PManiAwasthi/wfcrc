@@ -1,0 +1,54 @@
+site_name: wfcrc
+site_description: Worst-case Family Conformal Risk Control — reproducible research repository
+repo_url: https://github.com/wfcrc/wfcrc
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Configuration: configuration.md
+  - Reproducibility: reproducibility.md
+  - Architecture: architecture.md
+  - API reference:
+      - utils.io: api/utils_io.md
+      - utils.numerics: api/utils_numerics.md
+      - utils.seeds: api/utils_seeds.md
+      - utils.logging: api/utils_logging.md
+      - utils.cache: api/utils_cache.md
+      - utils.reproducibility: api/utils_reproducibility.md
+      - config: api/config.md
+      - exceptions: api/exceptions.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            docstring_style: google
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - toc:
+      permalink: true
