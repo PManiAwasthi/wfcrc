@@ -9,18 +9,36 @@ Specification, Implementation Blueprint, Experiment Blueprint). See
 
 ## Milestone status
 
-- **MS1 (this milestone): core infrastructure.** Deterministic hashing and
-  atomic serialization (`utils.io`), numerically stable primitives
+- **MS1: core infrastructure.** Deterministic hashing and atomic
+  serialization (`utils.io`), numerically stable primitives
   (`utils.numerics`), seeded RNG fanout (`utils.seeds`), structured JSONL
   logging (`utils.logging`), a content-addressed cache (`utils.cache`), git
   commit / environment fingerprinting (`utils.reproducibility`), and a
-  strict, typed, hashable, layered configuration system (`config`). **No
-  mathematical logic** (no ambiguity families, losses, or calibration) is
-  implemented yet — that is intentional; see
-  [docs/architecture.md](docs/architecture.md).
-- MS2–MS5: datasets, prediction sets, losses, ambiguity families,
-  calibration, verification, metrics, visualization, experiment runner —
-  not yet started.
+  strict, typed, hashable, layered configuration system (`config`).
+- **MS2: core algorithm.** Bounded monotone task losses
+  (`losses`: `FNRLoss`/`FPRLoss`/`MiscoverageLoss`), the four frozen
+  ambiguity families (`ambiguity`: `CVaRFamily`/`KLFamily`/
+  `FiniteGroupFamily`/`KnownWeightFamily`), and single-split WF-CRC
+  calibration (`calibration`: `Splitter`/`ThresholdSearch`/
+  `WFCRCCalibrator`).
+- **MS3: prediction sets & calibration pipeline.** Nested
+  prediction-set constructors (`prediction_sets`: `ThresholdSets`/
+  `MorphologicalSets`), the deterministic AS §20 checklist
+  (`evaluation.Verifier`), and a thin `LossTable → WFCRCCalibrator →
+  optional Verifier` orchestration (`calibration.pipeline`).
+- **MS4 (this milestone): datasets contracts, metrics & experiment
+  execution.** Abstract data-loading/score-provider contracts plus a
+  concrete loss-table assembler (`datasets`: `Dataset`/`DatasetLoader`/
+  `ScoreProvider`/`LossTableBuilder`), realized-risk and statistical
+  utilities (`evaluation.metrics`: realized worst-case/marginal risk,
+  per-group risk, set size, coverage, effective sizes, duality gap,
+  bootstrap CIs, one-sided risk test, paired Wilcoxon, Holm correction),
+  and a reduced experiment-execution report
+  (`evaluation.experiment.run_experiment`). See
+  [CLAIMS_TRACEABILITY.md](CLAIMS_TRACEABILITY.md) for implementation-level
+  deviations/gap-fills recorded against the frozen specs.
+- MS5: concrete datasets/models for real named datasets, visualization,
+  the full sweep/checkpointing experiment runner — not yet started.
 
 ## Quick start
 
