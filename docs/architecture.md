@@ -114,3 +114,37 @@ so the config system does not need to change when those registries land.
 `family` and `calibration`, by contrast, have concrete fields today because
 the frozen Mathematical/Algorithm specifications already fix their meaning
 independent of which family/dataset is chosen.
+
+## MS5 update: current subpackage status
+
+The "Status in MS1" column above is a historical snapshot; every subpackage
+it lists as an "empty placeholder" has since been implemented (`ambiguity`,
+`losses`, `calibration`, `prediction_sets` in MS2/MS3; `evaluation`,
+`datasets` — ABC contracts only — in MS4; `visualization`, and a brand-new
+`wfcrc/runner/` in MS5). Current status, MS5 complete:
+
+| Package | Status |
+|---|---|
+| `wfcrc/utils/`, `wfcrc/config/` | MS1, frozen |
+| `wfcrc/ambiguity/`, `wfcrc/losses/`, `wfcrc/calibration/` | MS2, frozen |
+| `wfcrc/prediction_sets/`, `wfcrc/evaluation/` (`Verifier`, `pipeline`) | MS3, frozen |
+| `wfcrc/datasets/` (ABC contracts + `LossTableBuilder`), `wfcrc/evaluation/metrics.py`, `wfcrc/evaluation/experiment.py` | MS4, frozen |
+| `wfcrc/visualization/` (`FigureSpec`/`FigureFile`, `plot_g_curve`/F1-F8), `wfcrc/runner/` (`ExperimentRunner`, `Checkpointer`, `Manifest`, `ResultBundle`, `SweepConfig`) | MS5, frozen |
+| `wfcrc/models/` | still an empty placeholder — no Blueprint equivalent, never populated |
+
+**`wfcrc/runner/` did not exist as a placeholder directory at all** (the
+Blueprint-vs-actual table above already noted "no equivalent yet" for both
+`verify`/`runner"; `verify` was resolved into `wfcrc/evaluation/verifier.py`
+in MS3, and `runner` is this milestone's new top-level package, matching
+the Blueprint's own name literally since no pre-existing divergent name
+blocked it).
+
+**Scope decision (see `CLAIMS_TRACEABILITY.md` for the full record,
+confirmed with the user before implementation):** `ExperimentRunner.run`
+takes already-built `LossTable` objects directly rather than resolving
+`Config.data`/`.model`/`.sets`/`.loss` to concrete dataset/model/set/loss
+instances — no such registry or concrete dataset/model exists anywhere in
+this repository (MS4's own scope decision: no real dataset/model is
+available in this environment). Only `Config.family` is resolved to a
+concrete object, via the already-frozen `wfcrc.ambiguity.FAMILIES` registry
+(MS2) — no new registry was added.

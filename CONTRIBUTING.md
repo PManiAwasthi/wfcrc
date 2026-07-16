@@ -65,8 +65,9 @@ plus the pre-commit hygiene hooks.
   `wfcrc.exceptions.WFCRCError`, not a bare built-in exception, for any
   intentional failure.
 - **Tests.** Every new module needs unit tests; every new branch should be
-  covered. MS1 maintains 100% line and branch coverage on `wfcrc/` — try
-  not to regress it, though later, more experiment-heavy milestones may
+  covered. The project maintains 100% line and branch coverage on `wfcrc/`
+  through MS5 — try not to regress it, though later, more
+  experiment-heavy milestones (real dataset/model integration) may
   reasonably relax this bar for integration-style code paths.
 
 ## Updating the lockfile

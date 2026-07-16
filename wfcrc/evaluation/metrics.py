@@ -117,6 +117,20 @@ def realized_worst_case_risk(
     from the test data itself — the calibration-time `theta_hat` was fit on
     calibration block A and has no relationship to the test distribution.
 
+    **Descriptive-statistic caveat:** `theta` is re-estimated on the same
+    `test_loss_table` this function then measures, so the result carries
+    the ordinary optimism of any plug-in/empirical-minimum estimator (the
+    argmin is chosen to fit the very sample it is evaluated on, which
+    tends to understate the true population worst-case risk somewhat).
+    This is *not* the same failure mode Math Spec §12 item 3 warns
+    against (a same-data dual feeding a conformal *threshold-selection*
+    rule, which breaks a finite-sample validity guarantee) — no threshold
+    is selected here, `lambda_hat` is already fixed, and this function
+    makes no validity claim of its own. It is purely a descriptive
+    measurement, and like most such plug-in estimates it should be read
+    as mildly optimistic rather than as an unbiased estimate of the true
+    worst-case risk.
+
     Args:
         result: The calibration outcome whose `lambda_hat` is deployed.
         test_loss_table: Held-out test-set loss table (same `lambda_grid`
@@ -253,8 +267,8 @@ def effective_sizes(
 
     `n_A`/`n_B` (dual branch) and per-group `n_G` (finite-group branch) are
     read directly from `result`; `n_eff = (Σw)² / Σw²` (Kish's effective
-    sample size, Algorithm Spec §20) is computed from `weights` when given
-    (known-weight branch).
+    sample size, MS4 Implementation Spec §C2 item 5) is computed from
+    `weights` when given (known-weight branch).
 
     Args:
         result: The calibration outcome to summarize.

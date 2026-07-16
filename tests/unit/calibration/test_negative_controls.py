@@ -129,18 +129,33 @@ def _pooled_k_fold_lambda_hat(
     rng = np.random.default_rng(seed)
     folds = np.array_split(rng.permutation(n), k_folds)
 
-    b_tilde = -np.inf
-    g_values = np.empty(_LAMBDA_GRID.size, dtype=np.float64)
+    # Pass 1: for every (lambda, fold), estimate the out-of-fold theta and
+    # the fold's pooled-transformed losses, collecting every theta seen.
+    r_hats = np.empty(_LAMBDA_GRID.size, dtype=np.float64)
+    thetas_by_lambda: list[list[object]] = []
     for j in range(_LAMBDA_GRID.size):
         pooled_transformed = np.empty(n, dtype=np.float64)
+        thetas: list[object] = []
         for fold in folds:
             fold_mask = np.zeros(n, dtype=bool)
             fold_mask[fold] = True
             theta = family.estimate_dual(values[~fold_mask, j])
             pooled_transformed[fold] = family.transform(values[fold, j], theta)
-            b_tilde = max(b_tilde, family.btil(theta, _LOSS_BOUND))
-        r_hat = float(np.mean(pooled_transformed))
-        g_values[j] = (n / (n + 1)) * r_hat + b_tilde / (n + 1)
+            thetas.append(theta)
+        thetas_by_lambda.append(thetas)
+        r_hats[j] = np.mean(pooled_transformed)
+
+    # Pass 2: B_tilde is the global max over every (lambda, fold) theta seen
+    # above -- computed only after Pass 1 completes, so every g(lambda)
+    # below uses the same, fully-accumulated bound (Algorithm Spec §7 step
+    # 6's own B_tilde = max_lambda [...] is a max over the *whole* grid,
+    # not a running max evaluated grid-point-by-grid-point).
+    b_tilde = max(
+        family.btil(theta, _LOSS_BOUND) for thetas in thetas_by_lambda for theta in thetas
+    )
+    g_values = np.array(
+        [(n / (n + 1)) * r_hats[j] + b_tilde / (n + 1) for j in range(_LAMBDA_GRID.size)]
+    )
 
     return _search_lambda_hat(g_values, alpha)
 

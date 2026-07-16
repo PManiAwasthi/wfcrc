@@ -13,11 +13,18 @@ completes the executable calibration pipeline: :mod:`wfcrc.prediction_sets`
 (data-loading/score-provider/loss-table-builder contracts),
 :mod:`wfcrc.evaluation.metrics` (realized-risk and statistical utilities),
 and :mod:`wfcrc.evaluation.experiment` (a reduced, dataset-free experiment
-report combining calibration, verification, and metrics). Visualization and
-the full sweep/checkpointing experiment runner remain out of scope and land
-in later milestones. This top-level ``__init__`` re-exports only the
-version and the shared exception hierarchy; import the modules above
-directly for their APIs.
+report combining calibration, verification, and metrics). MS5 completes the
+implementation: :mod:`wfcrc.visualization` (deterministic figure rendering —
+`plot_g_curve` and the paper's F1-F8 figures) and :mod:`wfcrc.runner`
+(`ExperimentRunner`/`Checkpointer` — config-driven runs, sweeps,
+checkpointing, resume, and the `make reproduce` golden-file harness). MS1-MS5
+are complete and frozen; the one remaining gap is a concrete dataset/model
+for any real, named dataset, which requires actual data/checkpoints not
+present in this environment (`wfcrc.datasets` stays ABC-contracts-only, and
+`wfcrc.runner.ExperimentRunner` takes already-built loss tables directly,
+until that lands). This top-level ``__init__`` re-exports only the version
+and the shared exception hierarchy; import the modules above directly for
+their APIs.
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ from wfcrc.exceptions import (
     FamilyError,
     PreconditionError,
     ReproducibilityError,
+    RunnerError,
     SerializationError,
     SetConstructionError,
     SplitLeakageError,
@@ -42,6 +50,7 @@ __all__ = [
     "FamilyError",
     "PreconditionError",
     "ReproducibilityError",
+    "RunnerError",
     "SerializationError",
     "SetConstructionError",
     "SplitLeakageError",

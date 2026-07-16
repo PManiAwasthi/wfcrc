@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wfcrc"
-version = "0.1.0"
+version = "0.5.0"
 description = "WF-CRC: Worst-case Family Conformal Risk Control — reproducible research repository"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -17,7 +17,7 @@ classifiers = [
   "Operating System :: OS Independent",
   "Typing :: Typed",
 ]
-dependencies = ["numpy>=1.26,<3", "pyyaml>=6.0,<7"]
+dependencies = ["numpy>=1.26,<3", "pyyaml>=6.0,<7", "matplotlib>=3.8,<4"]
 
 [project.optional-dependencies]
 dev = [

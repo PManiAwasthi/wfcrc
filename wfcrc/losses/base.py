@@ -5,7 +5,7 @@ Blueprint (§6), every loss is a function `l(set, label) ∈ (-∞, B]` that,
 paired with the correct nested set family, is non-increasing in the
 threshold `λ`. This module fixes only that contract; it does not implement
 or depend on any particular prediction-set constructor (that pairing is the
-responsibility of a later milestone's `sets`/`prediction_sets` module and
+responsibility of the `wfcrc.prediction_sets` module (MS3, complete) and
 its integration tests — see the module docstring in
 :mod:`wfcrc.losses.fnr`/`.fpr`/`.miscoverage` for the pairing each concrete
 loss requires).

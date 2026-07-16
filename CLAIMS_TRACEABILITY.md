@@ -278,11 +278,232 @@ behavior:
    `alpha` properly threaded through before the test was finalized. Fixed
    by making `alpha` an explicit parameter throughout.
 
+## 10 · MS4 independent audit findings, fixed before freeze
+
+A post-implementation independent audit (adversarial review against the
+Framework/Math/Algorithm Specs, Implementation/Experiment Blueprints, and
+the repository itself) found four issues, all corrected:
+
+1. **`ExperimentReport.config_hash` omitted `seed` and `family` entirely**
+   (HIGH). `run_experiment(..., seed: int, ...)` never stored `seed` on the
+   report, and `config_hash` covered only `{alpha, B, pi, lambda_grid}` —
+   not the ambiguity family's type or parameters. Since `seed` is the only
+   stochastic quantity in the entire procedure (Algorithm Spec §17) and the
+   report's own docstring cites Implementation Blueprint §17's
+   "seeds"-in-every-manifest requirement, this meant the artifact could not
+   actually serve the reproducibility role it claimed. **Fixed:**
+   `ExperimentReport` gained `seed: int`, `family_type: str`,
+   `family_params: dict[str, Any]` fields (via a new, generic, non-invasive
+   `_family_params(family)` helper using `vars(family)` — no change to any
+   frozen `wfcrc.ambiguity` class); `config_hash` now covers all of `cfg`,
+   `seed`, `family_type`, and `family_params`. Two experiments differing in
+   seed, family type, or family parameters now get different hashes.
+   `to_dict()` exposes the three new fields directly. Additive change: no
+   existing field removed or renamed, `run_experiment`'s parameter list
+   unchanged.
+2. **Bug in the pooled-K-fold negative-control harness's `B̃` accumulation**
+   (MEDIUM, test-only). `_pooled_k_fold_lambda_hat` updated
+   `b_tilde = max(b_tilde, ...)` *inside* the same loop that immediately
+   consumed it to build `g_values[j]`, so early λ-grid points used a
+   partially-accumulated (too-small) bound rather than the full two-pass
+   global max its sibling `_total_n_lambda_hat` already computed correctly.
+   Confirmed to flip the selected `lambda_hat` in ~13% of resamples in
+   isolation, but the effect on the test's own R=150-resample aggregate
+   comparison was negligible (0.137 → 0.132 mean realized risk; the
+   qualitative conclusion, and the "roughly 4-5x" figure quoted in the
+   module docstring, both survive). **Fixed:** rewritten as an explicit
+   two-pass computation (collect every fold's theta first, take the global
+   max, then build every `g_values[j]`), matching `_total_n_lambda_hat`'s
+   existing pattern. Test-only; no public API changed.
+3. **Misattributed formula citation** (MEDIUM). `effective_sizes`'s
+   docstring cited Kish's `n_eff = (Σw)²/Σw²` to "Algorithm Spec §20" —
+   that section (the §20 verification checklist) does not contain this
+   formula; it is from the vault's own MS4 Implementation Spec §C2 item 5.
+   **Fixed:** citation corrected; the formula itself was never wrong and is
+   unchanged.
+4. **Undisclosed same-sample optimism in `realized_worst_case_risk`**
+   (MEDIUM-LOW). The function re-estimates the family's dual parameter on
+   the same test sample it then measures — the ordinary, generic optimism
+   of any plug-in/empirical-minimum estimator, not the specific same-data
+   *threshold-selection* failure mode Math Spec §12 item 3 warns against
+   (no threshold is selected here; the function makes no validity claim).
+   Still undisclosed anywhere, and this is the metric the Experiment
+   Blueprint's E1 hypothesis is evaluated against. **Fixed:** a
+   "Descriptive-statistic caveat" paragraph added to the function's
+   docstring explaining the distinction and the expected direction of the
+   bias. Documentation only; no implementation change.
+
+Three additional low-severity/observational items from the audit
+(`bootstrap_ci` not routing through `wfcrc.utils.numerics.quantile`; the
+new `_NEAR_ZERO_STD_TOL` tolerance constant living in `metrics.py` rather
+than `wfcrc/constants.py`; four independent
+`isinstance(family, DualAmbiguityFamily)` dispatch sites) were explicitly
+deferred to future cleanup per the user's own scoping of this pass, and
+remain open, not open *problems* — just optional polish.
+
+## 11 · MS5 scope resolution (confirmed with the user before implementation)
+
+The MS5 task prompt asked for the full Implementation Blueprint reading of
+`runner.ExperimentRunner.run(config)->ResultBundle`, orchestrating "load
+config -> build/load loss tables (cal+test) -> calibrate -> verify ->
+metrics -> plot -> write manifest." Cross-checking this against the actual
+repository surfaced one genuine scope conflict, resolved by asking the user
+before any code was written (per the "if something appears missing, stop
+and document" rule):
+
+**Loss-table stage.** Building loss tables from `config.data`/`.model`/
+`.sets`/`.loss` requires resolving those name strings to concrete
+`DatasetLoader`/`ScoreProvider`/`PredictionSetConstructor`/`LossEvaluator`
+instances. No such dataset/model registry exists anywhere in this
+repository (`wfcrc.datasets` is ABC-contracts-only per the MS4 scope
+decision — no real dataset/model is available in this environment) — the
+same blocking condition MS4 hit with `run_experiment`. **Resolution
+(user-selected, of three options presented):** `ExperimentRunner.run` takes
+already-built `cal_loss_table`/`test_loss_table` `LossTable` objects
+directly, exactly like `run_experiment` already does. Only `config.family`
+is resolved to a concrete `AmbiguityFamily`, via the already-frozen
+`wfcrc.ambiguity.FAMILIES` registry (MS2, §2 above already documents that
+this registry exists) — no new dataset/sets/losses registry was built. The
+other two options considered and not selected: building new name->class
+registries for `sets`/`losses`/`family` now (still would have needed
+dataset/model injection regardless, and touches three already-frozen
+packages); or implementing only checkpointing/sweep/resume primitives
+without presenting `run(config)` as covering the loss-table stage at all
+(functionally identical to the selected option, differing only in framing).
+
+This is documented here because a future reader reconciling
+`ExperimentRunner.run`'s signature against the Implementation Blueprint's
+literal `run(config)->ResultBundle` text should not mistake the missing
+`config.data`/`.model` resolution for an oversight.
+
+## 12 · MS5 implementation-level disclosures (not open issues)
+
+1. **The `g`-curve is the only figure a single `ExperimentRunner.run` call
+   produces.** Most of the Experiment Blueprint's F1-F8 figures (§26)
+   aggregate *many* calibration runs (risk vs `alpha`, vs severity, vs
+   group) and have no canonical single-run form — they are downstream of a
+   sweep's collected metrics, not `ExperimentRunner`'s concern.
+   `wfcrc.visualization.plots.plot_g_curve` is the one figure genuinely tied
+   to a single run; `ExperimentRunner.run` recomputes `g(lambda)` across the
+   whole grid for it (`wfcrc.runner.runner._dual_g_curve`), mirroring
+   exactly the frozen dual-branch computation `WFCRCCalibrator`/`Verifier`
+   already perform (Algorithm Spec §7 steps 3-6, same family API) —
+   read-only, `lambda_hat` itself is never re-selected. Finite-group/
+   known-weight families have no `g`-curve concept in the frozen spec and
+   produce no figures. **Code:** `wfcrc/runner/runner.py`
+   (`_dual_g_curve`, `ExperimentRunner._render_figures`). **Tests:**
+   `tests/unit/runner/test_runner.py::TestDualGCurve`,
+   `TestRunNonDualFamilies`.
+2. **The verify STOP-gate is enforced by discarding, not skipping,
+   metrics on failure.** `run_experiment` (MS4, frozen) always computes
+   metrics and attaches a `VerificationReport`; it does not itself gate
+   metric exposure on verification passing (nothing in its own scope
+   requires that — that responsibility belongs to the runner, a higher
+   layer, per the Implementation Blueprint's own module dependency graph).
+   `ExperimentRunner.run` reuses `run_experiment` wholesale (composing
+   frozen code, not reimplementing calibrate+verify+metrics), then checks
+   `report.verification.passed` *before* checkpointing or returning
+   anything, raising `VerificationError` if it failed. Metrics are computed
+   once, internally, as an unavoidable consequence of that reuse, but a
+   failed gate means they are never checkpointed, never written to the
+   manifest, and never returned to the caller — "no downstream metrics" in
+   effect (MS5 spec C2 item 8), even though they were computed once and
+   discarded. **Code:** `wfcrc/runner/runner.py`
+   (`ExperimentRunner.run`'s `_compute_experiment` closure). **Tests:**
+   `tests/unit/runner/test_runner.py::TestVerifyStopGate`.
+3. **Checkpoint stage boundaries are reduced to `"experiment"` and
+   `"figures"`**, not the full "scores, loss table, dual, calibration,
+   metrics" list the MS5 spec names (C2 item 5) — because "scores"/"loss
+   table"/"dual" boundaries do not exist in this milestone's scope (loss
+   tables are injected, not built; the dual estimate is internal to
+   `WFCRCCalibrator.calibrate`, not separately exposed), and reusing
+   `run_experiment` wholesale bundles calibration+verification+metrics into
+   one checkpointable unit rather than three separate ones. This is the
+   same kind of disclosed scope reduction already applied to
+   `run_experiment` itself (§4 item 2 above); resumability is still genuine
+   for both boundaries that actually exist (see
+   `tests/unit/runner/test_runner.py::TestResume`, including a
+   figures-only-remaining resume case).
+4. **`ResultBundle.verification` is `None` on a checkpoint-hit resume**,
+   not a reconstructed live object. `VerificationReport` (MS4, frozen) has
+   no `from_dict`/deserialization method, and this milestone does not add
+   one to a frozen MS4 class. `Manifest.verification_passed` (this
+   milestone's own, JSON-safe field) carries the same boolean gate outcome
+   on both a fresh run and a resumed one — and is guaranteed `True` for any
+   manifest that was actually written, since a failing gate halts `run()`
+   before either is produced (see item 2 above). **Code:**
+   `wfcrc/runner/runner.py` (`ExperimentRunner.run`'s `live_verification`
+   holder). **Tests:**
+   `tests/unit/runner/test_runner.py::TestResume::test_resume_skips_recomputation_of_experiment_stage`.
+5. **Sweep cells always use a *derived* seed, never a swept raw seed
+   directly** (`derive_seed(f"runner.sweep.cell.{index}", seed)`), per the
+   MS5 spec's own acceptance criterion "sweep isolation (distinct dirs +
+   derived seeds)" (C2 item 10). This means two cells that name the same
+   raw seed in `SweepConfig.seeds` (e.g. to explore how sensitive results
+   are to seed choice at several `alpha`s) still get distinct, independent
+   splits — disclosed since a reader might otherwise expect the raw seed
+   value to be used verbatim. **Tests:**
+   `tests/unit/runner/test_runner.py::TestRunSweep::test_seeds_are_derived_and_distinct_even_when_raw_seed_repeats`.
+6. **`RunnerError`** (new, purely additive `WFCRCError` subclass, matching
+   every previous milestone's own pattern of adding one new exception for
+   its own new failure domain — `PreconditionError`/`FamilyError` in MS2,
+   `SetConstructionError`/`VerificationError` in MS3,
+   `SplitLeakageError` in MS4): covers `ExperimentRunner`-specific failures
+   with no more specific existing exception — `resume()` on a directory
+   with no resumable run, and an invalid swept `alpha` caught defensively
+   before it would otherwise reach `wfcrc.config`/`wfcrc.calibration` (see
+   item 7 below).
+7. **`run_sweep` validates `alpha` itself before constructing a cell's
+   `CalibrationConfig`.** `wfcrc.config.schema.CalibrationConfig` is a
+   plain dataclass with no `__post_init__` validation (range validation
+   lives in `wfcrc.config.loader`'s parsing functions, not the dataclass
+   itself, and `dataclasses.replace` bypasses the loader entirely) — so an
+   out-of-range swept `alpha` would otherwise silently produce a malformed
+   config rather than a clear error. `run_sweep` checks `0 < alpha < B`
+   itself before building the cell (raising `RunnerError`, caught by the
+   sweep's own "record + continue" handling, same as any other cell
+   failure) — a self-contained defensive addition, not a modification of
+   the frozen `CalibrationConfig`/`loader.py`.
+8. **`wfcrc.visualization`'s figure-input shapes are a disclosed,
+   reasonable realization, not a frozen data schema.** The MS5
+   Implementation Spec names `FigureSpec`/`FigureFile` as data structures
+   (C1 item 6) but gives no schema for what data each of the F1-F8 plotting
+   functions actually takes — only the Experiment Blueprint's prose
+   description of each figure's content (§26). Each `plot_*` function's
+   exact parameters (e.g. `plot_risk_vs_alpha(alphas, risks_by_family,
+   out_path, *, cis_by_family=None, ...)`) were chosen to match that prose
+   directly and are disclosed here, the same pattern already established
+   for the FPR loss and statistical-test gap-fills (§3, §8 above) — no
+   frozen mathematical content is affected (these are rendering functions,
+   not part of the calibration procedure).
+9. **`matplotlib>=3.8,<4`** is a new dependency (`pyproject.toml`),
+   justified by the same "no new dependencies unless the frozen spec
+   genuinely requires a capability numpy/stdlib can't provide" policy
+   already used to justify avoiding scipy in MS2's KL solver: the MS5 spec
+   explicitly requires vector figure files (`.pdf`/`.svg`) with axes,
+   legends, and CI bands (C1 items 2-4), which stdlib/numpy cannot produce.
+   Figure output is made byte-deterministic across processes (fixed
+   `savefig` metadata; a fixed `rcParams["svg.hashsalt"]`) — see
+   `wfcrc/visualization/base.py`'s module docstring and
+   `tests/unit/visualization/test_base.py::TestRenderFigure::test_byte_deterministic_across_calls`.
+10. **`make reproduce`'s "reference experiment" is synthetic**
+    (`scripts/reproduce.py`), for the same reason `ExperimentRunner.run`
+    itself takes injected `LossTable`s: no real dataset/model exists in
+    this environment. A small, fixed-seed synthetic calibration/test
+    `LossTable` pair (same recipe every invocation, including a *fixed*
+    `Config.runner.cache_dir` string so `Manifest.config_hash` itself is
+    bit-for-bit reproducible, not just the numeric outputs) is calibrated
+    via `ExperimentRunner`, and its manifest is diffed against
+    `tests/fixtures/reproduce_golden.json` within a `1e-9` absolute
+    tolerance. `python scripts/reproduce.py --write-golden` regenerates the
+    golden file after a deliberate change to the reference experiment
+    itself. **Tests:** `tests/unit/scripts/test_reproduce.py`.
+
 ## Connections
 
 Vault (frozen, not modified by this file): `Paper 1 - CLAIMS TRACEABILITY
-MATRIX.md`, `Paper 1 - ALGORITHM SPECIFICATION.md` (§15, §20),
+MATRIX.md`, `Paper 1 - ALGORITHM SPECIFICATION.md` (§7, §15, §20),
 `Paper 1 - Mathematical Specification (WF-CRC).md` (§5, §6), `Paper 1 -
-IMPLEMENTATION BLUEPRINT.md` (§6), `Paper 1 - MS2/MS3/MS4/MS5
-IMPLEMENTATION SPEC.md`, `Paper 1 - EXPERIMENT BLUEPRINT.md` (§3, §9,
-§12, §23). Repository: `CHANGELOG.md`, `PROJECT_CONTEXT.md` §7.
+IMPLEMENTATION BLUEPRINT.md` (§6, §9, §11, §12, §17), `Paper 1 - MS2/MS3/
+MS4/MS5 IMPLEMENTATION SPEC.md`, `Paper 1 - EXPERIMENT BLUEPRINT.md` (§3,
+§9, §12, §23, §26). Repository: `CHANGELOG.md`, `PROJECT_CONTEXT.md` §7.

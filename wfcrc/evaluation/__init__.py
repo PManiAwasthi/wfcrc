@@ -10,9 +10,11 @@ their :class:`~wfcrc.evaluation.metrics.CI` /
 :func:`~wfcrc.evaluation.experiment.run_experiment` /
 :class:`~wfcrc.evaluation.experiment.ExperimentReport` (the reduced,
 dataset-free experiment-execution entry point). Visualization
-(Implementation Blueprint's `viz.Plotter`) and the full sweep/checkpointing
-`runner.ExperimentRunner` remain out of scope; see each module's docstring
-for the exact boundary.
+(:mod:`wfcrc.visualization`, Implementation Blueprint's `viz.Plotter`) and
+the full sweep/checkpointing runner (:class:`wfcrc.runner.ExperimentRunner`)
+are implemented in their own packages (MS5, complete), not this one — this
+package's own scope stops at calibrate+verify+metrics; see each module's
+docstring for the exact boundary.
 """
 
 from __future__ import annotations

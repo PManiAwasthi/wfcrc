@@ -116,6 +116,9 @@ def test_experiment_report_to_dict_is_json_serializable_shape() -> None:
     assert d["verification_passed"] is True
     assert d["metrics"] == report.metrics
     assert d["config_hash"] == report.config_hash
+    assert d["seed"] == 0
+    assert d["family_type"] == "cvar"
+    assert d["family_params"] == {"beta": 0.2}
 
     import json
 
@@ -132,7 +135,18 @@ def test_experiment_report_to_dict_verification_passed_is_none_without_verifier(
     assert report.to_dict()["verification_passed"] is None
 
 
-def test_run_experiment_config_hash_is_deterministic_and_grid_sensitive() -> None:
+def test_run_experiment_config_hash_is_deterministic_given_identical_inputs() -> None:
+    cal_table = monotone_loss_table(n=20, seed=0)
+    test_table = monotone_loss_table(n=20, seed=1)
+    family = CVaRFamily(beta=0.2)
+    cfg = calibration_config(cal_table)
+
+    first = run_experiment(cal_table, test_table, family, cfg, seed=0)
+    second = run_experiment(cal_table, test_table, family, cfg, seed=0)
+    assert first.config_hash == second.config_hash
+
+
+def test_run_experiment_config_hash_is_sensitive_to_the_seed() -> None:
     cal_table = monotone_loss_table(n=20, seed=0)
     test_table = monotone_loss_table(n=20, seed=1)
     family = CVaRFamily(beta=0.2)
@@ -140,12 +154,51 @@ def test_run_experiment_config_hash_is_deterministic_and_grid_sensitive() -> Non
 
     first = run_experiment(cal_table, test_table, family, cfg, seed=0)
     second = run_experiment(cal_table, test_table, family, cfg, seed=1)
-    assert first.config_hash == second.config_hash  # seed isn't part of cfg
+    assert first.seed == 0
+    assert second.seed == 1
+    assert first.config_hash != second.config_hash
+
+
+def test_run_experiment_config_hash_is_sensitive_to_family_parameters() -> None:
+    cal_table = monotone_loss_table(n=20, seed=0)
+    test_table = monotone_loss_table(n=20, seed=1)
+    cfg = calibration_config(cal_table)
+
+    first = run_experiment(cal_table, test_table, CVaRFamily(beta=0.2), cfg, seed=0)
+    second = run_experiment(cal_table, test_table, CVaRFamily(beta=0.9), cfg, seed=0)
+    assert first.family_params == {"beta": 0.2}
+    assert second.family_params == {"beta": 0.9}
+    assert first.config_hash != second.config_hash
+
+
+def test_run_experiment_config_hash_is_sensitive_to_family_type() -> None:
+    cal_table = monotone_loss_table(n=20, seed=0)
+    test_table = monotone_loss_table(n=20, seed=1)
+    cfg = calibration_config(cal_table)
+
+    cvar_report = run_experiment(cal_table, test_table, CVaRFamily(beta=0.2), cfg, seed=0)
+    group_report = run_experiment(
+        cal_table,
+        test_table,
+        FiniteGroupFamily(masks=[tuple(range(0, 10)), tuple(range(10, 20))]),
+        cfg,
+        seed=0,
+    )
+    assert cvar_report.family_type == "cvar"
+    assert group_report.family_type == "finite_group"
+    assert cvar_report.config_hash != group_report.config_hash
+
+
+def test_run_experiment_config_hash_is_sensitive_to_the_grid() -> None:
+    cal_table = monotone_loss_table(n=20, seed=0)
+    family = CVaRFamily(beta=0.2)
+    cfg = calibration_config(cal_table)
+    first = run_experiment(cal_table, cal_table, family, cfg, seed=0)
 
     other_table = monotone_loss_table(n=20, seed=0, lambda_max=0.5)
     other_cfg = calibration_config(other_table)
-    third = run_experiment(other_table, other_table, family, other_cfg, seed=0)
-    assert third.config_hash != first.config_hash
+    second = run_experiment(other_table, other_table, family, other_cfg, seed=0)
+    assert first.config_hash != second.config_hash
 
 
 def test_run_experiment_uses_the_provided_loss_table_type() -> None:

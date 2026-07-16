@@ -136,3 +136,20 @@ class SplitLeakageError(WFCRCError):
     Args:
         message: Human-readable description of the overlap detected.
     """
+
+
+class RunnerError(WFCRCError):
+    """Raised for `wfcrc.runner`-specific failures with no more specific exception.
+
+    Per the MS5 Implementation Specification (C2 item 8): covers conditions
+    that are specific to orchestration itself, not to any lower module —
+    e.g. `resume()` called on a directory with no resumable run artifacts,
+    or a sweep-grid parameter that is invalid before it ever reaches
+    `wfcrc.config`/`wfcrc.calibration`. Distinct from
+    :class:`VerificationError` (raised when the verify STOP-gate itself
+    fails, propagated unchanged rather than wrapped, so a caller can still
+    catch it specifically).
+
+    Args:
+        message: Human-readable description of the failure.
+    """

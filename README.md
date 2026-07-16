@@ -9,6 +9,11 @@ Specification, Implementation Blueprint, Experiment Blueprint). See
 
 ## Milestone status
 
+**MS1-MS5 are complete and frozen.** This repository implements the full
+frozen Implementation Blueprint (utils/config through the experiment
+runner) short of concrete datasets/models for any real, named dataset —
+see below.
+
 - **MS1: core infrastructure.** Deterministic hashing and atomic
   serialization (`utils.io`), numerically stable primitives
   (`utils.numerics`), seeded RNG fanout (`utils.seeds`), structured JSONL
@@ -26,19 +31,33 @@ Specification, Implementation Blueprint, Experiment Blueprint). See
   `MorphologicalSets`), the deterministic AS §20 checklist
   (`evaluation.Verifier`), and a thin `LossTable → WFCRCCalibrator →
   optional Verifier` orchestration (`calibration.pipeline`).
-- **MS4 (this milestone): datasets contracts, metrics & experiment
-  execution.** Abstract data-loading/score-provider contracts plus a
-  concrete loss-table assembler (`datasets`: `Dataset`/`DatasetLoader`/
+- **MS4: datasets contracts, metrics & experiment execution.** Abstract
+  data-loading/score-provider contracts plus a concrete loss-table
+  assembler (`datasets`: `Dataset`/`DatasetLoader`/
   `ScoreProvider`/`LossTableBuilder`), realized-risk and statistical
   utilities (`evaluation.metrics`: realized worst-case/marginal risk,
   per-group risk, set size, coverage, effective sizes, duality gap,
   bootstrap CIs, one-sided risk test, paired Wilcoxon, Holm correction),
   and a reduced experiment-execution report
-  (`evaluation.experiment.run_experiment`). See
+  (`evaluation.experiment.run_experiment`).
+- **MS5: visualization, experiment runner & reproducibility.**
+  Deterministic figure rendering (`visualization`: `plot_g_curve` and the
+  paper's F1-F8 figures, each with a byte-reproducible `.pdf`/`.svg` plus a
+  `.csv` data sidecar), and a config-driven experiment runner
+  (`runner.ExperimentRunner`/`Checkpointer`: calibrate → verify → metrics →
+  plot → manifest, with checkpointing, sweeps, and resume). `make reproduce`
+  re-runs a fixed-seed reference experiment and diffs it against a
+  committed golden file. See
   [CLAIMS_TRACEABILITY.md](CLAIMS_TRACEABILITY.md) for implementation-level
-  deviations/gap-fills recorded against the frozen specs.
-- MS5: concrete datasets/models for real named datasets, visualization,
-  the full sweep/checkpointing experiment runner — not yet started.
+  deviations/gap-fills recorded against the frozen specs, milestone by
+  milestone.
+
+**Not yet built (out of scope for MS1-MS5):** concrete datasets/models for
+any real, named dataset (Cityscapes, MSD, CIFAR, ...) — no such data or
+checkpoints are present in this environment. `ExperimentRunner` and
+`run_experiment` both operate on already-built loss tables directly rather
+than resolving a dataset/model from configuration; wiring in a real dataset
+is the vault's own next milestone (MS6, experiment execution).
 
 ## Quick start
 
@@ -47,6 +66,7 @@ pip install -e ".[dev]"
 make test        # pytest (unit suite + coverage)
 make lint         # ruff + black --check
 make typecheck    # mypy --strict
+make reproduce    # re-run the reference experiment, diff against the golden file
 ```
 
 See [docs/getting-started.md](docs/getting-started.md) for details, and

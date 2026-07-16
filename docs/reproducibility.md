@@ -90,10 +90,19 @@ lockfile directly.
 remaining piece of provenance — *what code and environment* produced a
 result — via [`get_git_commit`][wfcrc.utils.reproducibility.get_git_commit]
 and [`get_environment_fingerprint`][wfcrc.utils.reproducibility.get_environment_fingerprint].
-Combined with a config hash and a seed, this is everything a future run
-manifest needs to fully explain a result: *parameters* (config hash),
-*randomness* (seed), and *code/environment* (git commit + fingerprint).
+Combined with a config hash and a seed, this is everything a run manifest
+needs to fully explain a result: *parameters* (config hash), *randomness*
+(seed), and *code/environment* (git commit + fingerprint).
 
-MS1 does not yet write run manifests or implement `make reproduce` end to
-end — that lands with the experiment runner (later milestones). The
-`reproduce` target exists today only as a documented stub in the `Makefile`.
+`wfcrc.runner.runner.Manifest` (MS5) is the run manifest this section
+anticipated: every `ExperimentRunner.run` call writes one atomically to
+`<run_dir>/manifest.json`, combining a config-hash/seed/family fingerprint
+with this module's git-commit and environment fingerprint, plus the
+resulting calibration diagnostics and metrics. `make reproduce`
+(`scripts/reproduce.py`) is no longer a stub: it re-runs a small, fixed-seed
+synthetic reference experiment through `ExperimentRunner` and diffs its
+manifest against the committed `tests/fixtures/reproduce_golden.json`
+within a `1e-9` absolute tolerance — see
+[Architecture](architecture.md#ms5-update-current-subpackage-status) and
+`CLAIMS_TRACEABILITY.md` §12 item 10 for why the reference experiment is
+synthetic rather than a real dataset.

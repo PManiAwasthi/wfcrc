@@ -26,15 +26,15 @@ lock:
 	$(PYTHON) -m pip freeze --exclude-editable | sort -f >> requirements/lock.txt
 
 lint:
-	ruff check wfcrc tests
-	black --check wfcrc tests
+	ruff check wfcrc tests scripts
+	black --check wfcrc tests scripts
 
 format:
-	ruff check --fix wfcrc tests
-	black wfcrc tests
+	ruff check --fix wfcrc tests scripts
+	black wfcrc tests scripts
 
 typecheck:
-	mypy wfcrc
+	mypy wfcrc scripts
 
 test:
 	pytest --no-cov
@@ -42,10 +42,13 @@ test:
 test-cov:
 	pytest
 
-# MS1 stub: later milestones wire this to re-run a reference experiment and
-# diff its metrics against a stored golden file (Implementation Blueprint §17).
+# MS5: re-run the (synthetic) reference experiment and diff its manifest
+# against the committed golden file (tests/fixtures/reproduce_golden.json)
+# within tolerance (Implementation Blueprint §17, MS5 spec C2 item 5).
+# Use `python scripts/reproduce.py --write-golden` to regenerate the golden
+# file after a deliberate change to the reference experiment itself.
 reproduce:
-	@echo "make reproduce: no experiments implemented yet (MS1 scope is infrastructure only)."
+	$(PYTHON) scripts/reproduce.py
 
 clean:
 	find . -type d -name '__pycache__' -exec rm -rf {} +

@@ -26,9 +26,14 @@ Nested sections are deep-merged, so a later layer can override just
 
 The top-level sections are `data`, `model`, `sets`, `loss`, `family`,
 `calibration`, `runner`, and `seed`. `data`/`model`/`sets`/`loss` are
-intentionally generic in MS1 (`{name, params}`) — the registries that
-resolve `name` to a concrete implementation are built in later milestones.
-`family` and `calibration` carry the concrete, validated fields the frozen
+intentionally generic (`{name, params}`), a shape fixed in MS1 before the
+registries that resolve `name` to a concrete implementation existed.
+`wfcrc.prediction_sets.SETS` and `wfcrc.losses.LOSSES` (built in MS2/MS3)
+now resolve `sets.name`/`loss.name` to a concrete class; `data.name`/
+`model.name` still have no registry and no concrete implementation for any
+real, named dataset — that requires actual data/checkpoints not present in
+this environment (see `CLAIMS_TRACEABILITY.md` §11). `family` and
+`calibration` carry the concrete, validated fields the frozen
 Mathematical/Algorithm specifications require:
 
 - `calibration.alpha`, `calibration.B`: `0 < alpha < B`.

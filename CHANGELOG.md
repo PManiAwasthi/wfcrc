@@ -7,6 +7,97 @@ This project follows the milestone sequence defined by the frozen
 Implementation Blueprint (MS1–MS5) rather than conventional semantic
 versioning while pre-1.0.
 
+## [0.5.0] — 2026-07-16 — MS5: visualization, experiment runner & reproducibility
+
+### Added
+
+- `wfcrc.visualization` (`Plotter`, M14): `FigureSpec`/`FigureFile` data
+  structures and deterministic figure-rendering plumbing
+  (`wfcrc.visualization.base`) — fixed `savefig` metadata and a fixed
+  `rcParams["svg.hashsalt"]` make PDF/SVG output byte-identical across
+  processes given identical input data, and every figure ships a `.csv`
+  data sidecar (with a `source_hash` provenance header) that is exactly
+  the data used to render it. `wfcrc.visualization.plots` implements
+  `plot_g_curve` plus all eight Experiment Blueprint figures:
+  `plot_risk_vs_alpha` (F1), `plot_group_risk` (F2), `plot_risk_vs_shift`
+  (F3), `plot_set_size` (F4), `plot_nesting` (F5), `plot_qualitative` (F6),
+  `plot_runtime` (F7), `plot_reliability` (F8) — each a thin public
+  wrapper around a private `_build_*` function so unit tests can assert on
+  axis labels/legends/reference lines/CI bands without parsing a rendered
+  file back apart. New dependency: `matplotlib>=3.8,<4` (justified: vector
+  figure output is explicitly required by the frozen spec and has no
+  numpy/stdlib alternative, the same policy already used to justify
+  avoiding scipy in MS2's KL solver).
+- `wfcrc.runner` (M15, new top-level package — the Implementation
+  Blueprint's own layout table already noted no pre-existing placeholder
+  directory for it, unlike every other subpackage): `Checkpointer`
+  (thin, resumable wrapper over the already-frozen `wfcrc.utils.cache.Cache`)
+  and `ExperimentRunner` — `run(config, cal_loss_table, test_loss_table,
+  *, run_dir, ...) -> ResultBundle` orchestrates calibrate -> verify ->
+  metrics (composing `wfcrc.evaluation.experiment.run_experiment`
+  wholesale) -> the single-run `g`-curve figure (dual families only) ->
+  atomic `manifest.json`, enforcing the verify STOP-gate (raises
+  `VerificationError` before any checkpoint/metric is exposed).
+  `run_sweep(base_config, ..., sweep_config)` runs an `alpha`/family-param/
+  seed grid as isolated, derived-seed sub-runs, recording (not raising) a
+  `SweepCellFailure` for any cell that fails. `resume(run_dir)` rehydrates
+  a previous run's persisted config/loss-tables/options and re-invokes
+  `run()`, which transparently skips every already-checkpointed stage.
+  `Manifest`/`ResultBundle`/`SweepConfig`/`SweepCellFailure` are this
+  milestone's new, JSON-serializable data structures.
+- `scripts/reproduce.py` (`make reproduce`, wired into the `Makefile`):
+  re-runs a small, fixed-seed synthetic reference experiment via
+  `ExperimentRunner` and diffs its manifest against the committed
+  `tests/fixtures/reproduce_golden.json` within a `1e-9` absolute
+  tolerance; `--write-golden` regenerates the golden file. Added as a
+  fourth CI job.
+- `wfcrc.exceptions`: added `RunnerError` (runner-specific failures with
+  no more specific existing exception — matches every previous
+  milestone's own pattern of adding one new exception for its new failure
+  domain).
+- 125 new unit tests across `visualization`/`runner`/`scripts`; repository
+  total 641 tests, 100% line and branch coverage maintained across all 51
+  source modules (`wfcrc/` — `scripts/` is exercised by its own test suite
+  but, matching `pyproject.toml`'s pre-existing `[tool.coverage.run]
+  source = ["wfcrc"]` scope, is not counted toward that figure).
+
+### Documentation
+
+- `CLAIMS_TRACEABILITY.md` records this milestone's scope resolution
+  (confirmed with the user before implementation): `ExperimentRunner.run`
+  takes already-built `LossTable`s directly rather than resolving
+  `config.data`/`.model`/`.sets`/`.loss` to concrete objects — no such
+  registry or concrete dataset/model exists anywhere in this repository,
+  the same blocking condition MS4's `run_experiment` already hit. Also
+  records ten implementation-level disclosures: the single-run `g`-curve
+  figure's scope (most F1-F8 figures aggregate many runs and have no
+  single-run form); the verify STOP-gate's "compute-then-discard-on-failure"
+  design (reusing `run_experiment` wholesale rather than duplicating its
+  logic); the reduced `"experiment"`/`"figures"` checkpoint boundaries;
+  `ResultBundle.verification` being `None` on a checkpoint-hit resume
+  (`VerificationReport` has no `from_dict`); sweep cells always using a
+  derived, never a raw, seed; the new `RunnerError` exception;
+  `run_sweep`'s own defensive `alpha` range check (`CalibrationConfig` has
+  no `__post_init__` validation); the visualization module's disclosed
+  (not frozen) per-figure data shapes; the new `matplotlib` dependency;
+  and the synthetic `make reproduce` reference experiment.
+- `docs/index.md`, `docs/architecture.md`: corrected stale MS1-era status
+  tables (previously never updated across MS2-MS4 either) to reflect that
+  MS1-MS5 are all complete, and added a current subpackage-status table.
+
+### Not implemented (explicitly out of MS5 scope)
+
+- `ExperimentRunner.run`/`run_sweep` do not resolve `config.data`/`.model`/
+  `.sets`/`.loss` to concrete objects — no dataset/model registry, and no
+  concrete `DatasetLoader`/`ScoreProvider` for any real, named dataset,
+  exists in this environment (unchanged from MS4). Building one requires
+  an actual dataset/model checkpoint neither present here.
+- No figures beyond the single-run `g`-curve are produced by
+  `ExperimentRunner` itself; F1/F3/F4/F5 (which aggregate many runs/sweep
+  cells) require a caller to assemble their own series from multiple
+  `ResultBundle`s/`SweepConfig` results and call the relevant
+  `wfcrc.visualization.plots` function directly.
+
 ## [0.4.0] — 2026-07-16 — MS4: datasets contracts, metrics & experiment execution
 
 ### Added
