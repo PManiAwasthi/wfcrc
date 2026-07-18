@@ -479,3 +479,195 @@ def test_empty_split_has_zero_length(basic_root: Path) -> None:
     assert len(empty) == 0
     assert list(empty) == []
     assert isinstance(empty, MSDDataset)
+
+
+# --- DI-1: direct image access -----------------------------------------------
+
+
+def test_image_returns_native_resolution_array(basic_loader: MSDNiftiLoader) -> None:
+    dataset = basic_loader.load("train")
+    image = dataset.image("hippocampus_001")
+    assert image.shape == SHAPE
+    assert image.dtype == np.float64
+    assert image[0, 0, 0] == pytest.approx(100.0)  # case index 0 -> value 100.0 + 0
+
+
+def test_image_matches_iteration_output(basic_loader: MSDNiftiLoader) -> None:
+    dataset = basic_loader.load("train")
+    _id, iter_image, _label = next(iter(dataset))
+    direct_image = dataset.image("hippocampus_001")
+    assert np.array_equal(iter_image, direct_image)
+
+
+def test_image_unknown_id_raises_value_error(basic_loader: MSDNiftiLoader) -> None:
+    dataset = basic_loader.load("train")
+    with pytest.raises(ValueError, match="unknown id"):
+        dataset.image("not-a-real-id")
+
+
+def test_image_missing_file_raises_serialization_error(tmp_path: Path) -> None:
+    _build_task(tmp_path, ["hippocampus_001"])
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["hippocampus_001"], [], []))
+    dataset = loader.load("train")
+    (tmp_path / TASK / "imagesTr" / "hippocampus_001.nii.gz").unlink()
+    with pytest.raises(SerializationError, match="does not exist"):
+        dataset.image("hippocampus_001")
+
+
+# --- DI-1: orientation --------------------------------------------------------
+
+
+def test_orientation_returns_axis_codes_for_identity_affine(basic_loader: MSDNiftiLoader) -> None:
+    # The synthetic fixture writes every volume with affine=np.eye(4), whose
+    # canonical nibabel orientation is ("R", "A", "S").
+    dataset = basic_loader.load("train")
+    assert dataset.orientation("hippocampus_001") == ("R", "A", "S")
+
+
+def test_orientation_unknown_id_raises_value_error(basic_loader: MSDNiftiLoader) -> None:
+    dataset = basic_loader.load("train")
+    with pytest.raises(ValueError, match="unknown id"):
+        dataset.orientation("not-a-real-id")
+
+
+def test_orientation_missing_file_raises_serialization_error(tmp_path: Path) -> None:
+    _build_task(tmp_path, ["hippocampus_001"])
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["hippocampus_001"], [], []))
+    dataset = loader.load("train")
+    (tmp_path / TASK / "imagesTr" / "hippocampus_001.nii.gz").unlink()
+    with pytest.raises(SerializationError, match="does not exist"):
+        dataset.orientation("hippocampus_001")
+
+
+def test_orientation_malformed_nifti_raises_serialization_error(tmp_path: Path) -> None:
+    _build_task(tmp_path, ["hippocampus_001"])
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["hippocampus_001"], [], []))
+    dataset = loader.load("train")
+    (tmp_path / TASK / "imagesTr" / "hippocampus_001.nii.gz").write_bytes(b"not a real nifti file")
+    with pytest.raises(SerializationError, match="could not read NIfTI"):
+        dataset.orientation("hippocampus_001")
+
+
+# --- DI-1: verify_integrity ---------------------------------------------------
+
+
+def test_verify_integrity_reports_ok_for_a_clean_split(basic_loader: MSDNiftiLoader) -> None:
+    dataset = basic_loader.load("calibration")
+    report = dataset.verify_integrity()
+    assert report.ok is True
+    report.assert_ok()  # must not raise
+
+
+def test_verify_integrity_detects_shape_mismatch(tmp_path: Path) -> None:
+    task_dir = tmp_path / TASK
+    _write_volume(task_dir / "imagesTr" / "case_a.nii.gz", np.zeros((4, 5, 6)), SPACING)
+    _write_volume(task_dir / "labelsTr" / "case_a.nii.gz", np.zeros((4, 5, 7)), SPACING)
+    dataset_json = {
+        "labels": {"0": "background", "1": "Anterior", "2": "Posterior"},
+        "training": [{"image": "./imagesTr/case_a.nii.gz", "label": "./labelsTr/case_a.nii.gz"}],
+        "test": [],
+    }
+    (task_dir / "dataset.json").write_text(json.dumps(dataset_json), encoding="utf-8")
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["case_a"], [], []))
+    report = loader.load("train").verify_integrity()
+    assert report.ok is False
+    assert any("shape mismatch" in issue.problem for issue in report.issues)
+
+
+def test_verify_integrity_detects_non_finite_image(tmp_path: Path) -> None:
+    task_dir = tmp_path / TASK
+    bad_image = np.zeros(SHAPE, dtype=np.float32)
+    bad_image[0, 0, 0] = np.nan
+    _write_volume(task_dir / "imagesTr" / "case_a.nii.gz", bad_image, SPACING)
+    _write_volume(task_dir / "labelsTr" / "case_a.nii.gz", np.zeros(SHAPE), SPACING)
+    dataset_json = {
+        "labels": {"0": "background", "1": "Anterior", "2": "Posterior"},
+        "training": [{"image": "./imagesTr/case_a.nii.gz", "label": "./labelsTr/case_a.nii.gz"}],
+        "test": [],
+    }
+    (task_dir / "dataset.json").write_text(json.dumps(dataset_json), encoding="utf-8")
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["case_a"], [], []))
+    report = loader.load("train").verify_integrity()
+    assert report.ok is False
+    assert any("NaN/Inf" in issue.problem for issue in report.issues)
+
+
+def test_verify_integrity_detects_unexpected_label_value(tmp_path: Path) -> None:
+    task_dir = tmp_path / TASK
+    _write_volume(task_dir / "imagesTr" / "case_a.nii.gz", np.zeros(SHAPE), SPACING)
+    bad_label = np.zeros(SHAPE, dtype=np.float32)
+    bad_label[0, 0, 0] = 7.0  # not in the declared {0, 1, 2} label map
+    _write_volume(task_dir / "labelsTr" / "case_a.nii.gz", bad_label, SPACING)
+    dataset_json = {
+        "labels": {"0": "background", "1": "Anterior", "2": "Posterior"},
+        "training": [{"image": "./imagesTr/case_a.nii.gz", "label": "./labelsTr/case_a.nii.gz"}],
+        "test": [],
+    }
+    (task_dir / "dataset.json").write_text(json.dumps(dataset_json), encoding="utf-8")
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["case_a"], [], []))
+    report = loader.load("train").verify_integrity()
+    assert report.ok is False
+    assert any("outside the declared label map" in issue.problem for issue in report.issues)
+
+
+def test_verify_integrity_reports_unreadable_files_without_raising(tmp_path: Path) -> None:
+    _build_task(tmp_path, ["hippocampus_001"])
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["hippocampus_001"], [], []))
+    dataset = loader.load("train")
+    (tmp_path / TASK / "labelsTr" / "hippocampus_001.nii.gz").unlink()
+    report = dataset.verify_integrity()
+    assert report.ok is False
+    assert any("label unreadable" in issue.problem for issue in report.issues)
+
+
+def test_verify_integrity_reports_unreadable_image_without_raising(tmp_path: Path) -> None:
+    _build_task(tmp_path, ["hippocampus_001"])
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["hippocampus_001"], [], []))
+    dataset = loader.load("train")
+    (tmp_path / TASK / "imagesTr" / "hippocampus_001.nii.gz").unlink()
+    report = dataset.verify_integrity()
+    assert report.ok is False
+    assert any("image unreadable" in issue.problem for issue in report.issues)
+
+
+def test_verify_integrity_detects_non_finite_label(tmp_path: Path) -> None:
+    task_dir = tmp_path / TASK
+    _write_volume(task_dir / "imagesTr" / "case_a.nii.gz", np.zeros(SHAPE), SPACING)
+    bad_label = np.zeros(SHAPE, dtype=np.float32)
+    bad_label[0, 0, 0] = np.nan
+    _write_volume(task_dir / "labelsTr" / "case_a.nii.gz", bad_label, SPACING)
+    dataset_json = {
+        "labels": {"0": "background", "1": "Anterior", "2": "Posterior"},
+        "training": [{"image": "./imagesTr/case_a.nii.gz", "label": "./labelsTr/case_a.nii.gz"}],
+        "test": [],
+    }
+    (task_dir / "dataset.json").write_text(json.dumps(dataset_json), encoding="utf-8")
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["case_a"], [], []))
+    report = loader.load("train").verify_integrity()
+    assert report.ok is False
+    assert any("label contains NaN/Inf" in issue.problem for issue in report.issues)
+
+
+def test_verify_integrity_on_empty_split_is_ok(basic_root: Path) -> None:
+    manifest = _manifest([], CASE_IDS[:2], CASE_IDS[2:])
+    loader = MSDNiftiLoader(basic_root, TASK, split_manifest=manifest)
+    report = loader.load("train").verify_integrity()
+    assert report.ok is True
+
+
+# --- DI-1: duplicate id within a single split --------------------------------
+
+
+def test_duplicate_id_within_a_single_split_raises_value_error(tmp_path: Path) -> None:
+    _build_task(tmp_path, ["hippocampus_001", "hippocampus_002"])
+    # A caller-supplied split_manifest listing the same id twice within one
+    # split (distinct from the already-covered "duplicate within
+    # dataset.json's own training list" case, `_discover_cases`). Neither
+    # the frozen A1 gate (`assert_split_disjoint`, which only checks
+    # *between*-split overlap) nor `MSDNiftiLoader.__init__` itself catches
+    # this -- it only surfaces once `.load()` actually constructs the
+    # `MSDDataset` for that split.
+    manifest = _manifest(["hippocampus_001", "hippocampus_001"], [], ["hippocampus_002"])
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=manifest)
+    with pytest.raises(ValueError, match="duplicate id"):
+        loader.load("train")

@@ -225,3 +225,8 @@ PROJECT_CONTEXT.md
 # large downloaded research data must never be committed.
 /data/
 /datasets/
+
+# MS8 (docs/RESULTS_SCHEMA.md §1) / MS10 pilot: generated experiment output
+# (manifests, figures, checkpoints, per-run caches) -- never source, never
+# committed; re-derivable from a run's own recorded config/seed.
+/results/

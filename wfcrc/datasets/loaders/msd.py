@@ -251,6 +251,63 @@ confirmation of the label-corruption risk §5 cites as the reason this
 loader does not auto-resample labels. See the validation session's own
 final report for the full record (performance timings, visual-inspection
 renders, split-manifest mechanism checks).
+
+**9 · DI-1 real-data re-validation and production-quality additions.**
+Per an explicit "establish the production DatasetLoader standard, using
+Hippocampus as the reference implementation" instruction, every claim in
+§1-§8 above was independently re-exercised against the real, locally-
+acquired archive (all 260 real cases, fresh inspection, not reused from
+memory of the MS6.3A pass): declared counts (260 training / 130 test)
+match on-disk file counts exactly; zero duplicate ids, missing files,
+shape mismatches, or non-finite (NaN/Inf) values in any image or label;
+label values exactly ``{0, 1, 2}`` across all 260 cases; voxel spacing
+uniformly ``(1.0, 1.0, 1.0)`` mm (confirms MS6.3A). **One genuinely new
+fact, not previously checked or documented anywhere in this codebase:**
+every one of the 260 real cases shares a single, uniform NIfTI
+orientation, ``("R", "A", "S")`` (right-anterior-superior), confirmed via
+``nibabel.aff2axcodes`` — now exposed via the new
+:meth:`MSDDataset.orientation` method (below), the same way
+:meth:`spacing` already exposes each case's own header value rather than
+assuming it. Real per-axis shape ranges, also newly recorded precisely
+(previously only "30-43 voxels per axis" in prose): ``D`` (first axis)
+31-43, ``H`` 40-59, ``W`` 24-47, across 236 distinct shapes.
+
+Three real, previously-disclosed-as-gaps issues were closed, all
+additively (no existing method signature changed, no existing test
+behavior changed):
+
+- **No direct per-id image accessor existed** (`wfcrc.models.scores.
+  hippocampus_segmenter`'s own module docstring already named this gap,
+  "Where the raw image comes from," and worked around it by consuming
+  `__iter__` once at construction) — closed by the new
+  :meth:`MSDDataset.image` method, mirroring :meth:`labels`'s existing
+  shape exactly. `__iter__` now composes it instead of duplicating the
+  NIfTI-read call.
+- **A within-split duplicate id was silently tolerated** — if a caller's
+  `split_manifest` listed the same case id twice within one split (never
+  across splits, which the frozen A1 gate already catches),
+  `MSDDataset.__init__`'s own `dict`-comprehension lookup table silently
+  kept only the last entry, leaving `len(dataset)` (from the untouched
+  `tuple`) larger than the number of *distinct* examples actually
+  reachable via `ids()`/`_by_id`. `__init__` now raises `ValueError`
+  naming the duplicate(s) — a real, previously-reachable gap, not a
+  hypothetical one, and exactly the DI-1 task brief's own "duplicate
+  identifiers are rejected" requirement, generalized beyond the
+  already-covered "duplicate within `dataset.json`'s own training list"
+  case (`_discover_cases`, unchanged) to "duplicate within a caller-
+  supplied split assignment."
+- **No integrity-checking method existed** beyond MS6.3A's own one-off,
+  external validation script — closed by the new
+  :meth:`MSDDataset.verify_integrity`, an additive, concrete method (not
+  a new abstract requirement on the frozen `Dataset` ABC — see
+  `wfcrc/datasets/base.py`'s own `IntegrityReport` docstring for why) that
+  any caller can now run mechanically, inside this repository, without a
+  bespoke ad hoc script, and that a future loader family may adopt in the
+  same shape (`docs/DATASET_INTEGRATION_GUIDE.md`).
+
+No existing public method's signature, return type, or documented
+behavior changed. `MSDNiftiLoader`'s own constructor/`.load()` interface
+is completely unchanged.
 """
 
 from __future__ import annotations
@@ -265,7 +322,13 @@ import nibabel as nib
 import numpy as np
 from numpy.typing import NDArray
 
-from wfcrc.datasets.base import Dataset, DatasetLoader, SplitManifest
+from wfcrc.datasets.base import (
+    Dataset,
+    DatasetLoader,
+    IntegrityIssue,
+    IntegrityReport,
+    SplitManifest,
+)
 from wfcrc.datasets.metadata import DATASET_METADATA
 from wfcrc.exceptions import SerializationError
 
@@ -369,6 +432,33 @@ def _load_nifti_volume(path: Path) -> tuple[NDArray[np.float64], tuple[float, fl
     return array, spacing
 
 
+def _load_nifti_affine(path: Path) -> NDArray[np.float64]:
+    """Read a NIfTI file's affine transform (header only, no full array read).
+
+    DI-1 addition, additive: backs :meth:`MSDDataset.orientation`. Kept as a
+    separate helper from :func:`_load_nifti_volume` (rather than extending
+    that function's return shape) so every existing caller of
+    `_load_nifti_volume` is completely unaffected.
+
+    Args:
+        path: Path to a `.nii`/`.nii.gz` file.
+
+    Returns:
+        The `(4, 4)` affine transform matrix.
+
+    Raises:
+        SerializationError: If `path` does not exist or cannot be parsed.
+    """
+    if not path.is_file():
+        raise SerializationError(f"referenced NIfTI file does not exist: {path}")
+    try:
+        image = nib.load(str(path))
+        affine = np.asarray(image.affine, dtype=np.float64)  # type: ignore[attr-defined]
+    except Exception as exc:
+        raise SerializationError(f"could not read NIfTI file {path}: {exc}") from exc
+    return affine
+
+
 class MSDDataset(Dataset):
     """A loaded MSD/NIfTI split: lazily reads image/label volumes on access.
 
@@ -394,8 +484,21 @@ class MSDDataset(Dataset):
             task_labels: `dataset.json`'s own `"labels"` map (e.g.
                 `{"0": "background", "1": "Anterior", "2": "Posterior"}`),
                 surfaced via :meth:`meta`.
+
+        Raises:
+            ValueError: If `cases` contains two entries sharing the same
+                `id_` (DI-1 addition: a within-split duplicate id was
+                previously silently collapsed to one entry by the
+                `dict`-comprehension lookup table below, without
+                `__len__`/`ids()` agreeing about how many examples this
+                split actually has — see `docs/DATASET_INTEGRATION_GUIDE.md`
+                for the full disclosure).
         """
         self._cases: tuple[_MSDCase, ...] = tuple(cases)
+        ids_seen = [c.id_ for c in self._cases]
+        if len(ids_seen) != len(set(ids_seen)):
+            duplicates = sorted({str(i) for i in ids_seen if ids_seen.count(i) > 1})
+            raise ValueError(f"duplicate id(s) within this split: {duplicates}")
         self._by_id: dict[Hashable, _MSDCase] = {c.id_: c for c in self._cases}
         self._metadata_key = metadata_key
         self._task = task
@@ -411,14 +514,28 @@ class MSDDataset(Dataset):
     def __iter__(self) -> Iterator[tuple[Hashable, Any, Any]]:
         """Yield `(id, image, label)` triples, image/label at native resolution."""
         for case in self._cases:
-            image, _ = _load_nifti_volume(case.image_path)
-            yield case.id_, image, self.labels(case.id_)
+            yield case.id_, self.image(case.id_), self.labels(case.id_)
 
     def __len__(self) -> int:
         return len(self._cases)
 
     def ids(self) -> Sequence[Hashable]:
         return tuple(c.id_ for c in self._cases)
+
+    def image(self, id_: Hashable) -> NDArray[np.float64]:
+        """Return the native-resolution image volume for `id_`.
+
+        DI-1 addition, additive: direct per-id image access, mirroring
+        :meth:`labels`/:meth:`raw_labels`/:meth:`spacing`'s existing shape.
+        Closes a previously-disclosed gap (`wfcrc.models.scores.
+        hippocampus_segmenter`'s own module docstring, "Where the raw
+        image comes from"): a `ScoreProvider` no longer needs to consume
+        `__iter__` once to build its own internal `id -> image` lookup —
+        it may call this directly instead. `__iter__` itself now composes
+        this method rather than duplicating the NIfTI-read call.
+        """
+        image, _ = _load_nifti_volume(self._case_for(id_).image_path)
+        return image
 
     def labels(self, id_: Hashable) -> NDArray[np.bool_]:
         """Return the binarized foreground mask (`raw_label > 0`) for `id_`.
@@ -448,6 +565,93 @@ class MSDDataset(Dataset):
         """
         _, spacing = _load_nifti_volume(self._case_for(id_).image_path)
         return spacing
+
+    def orientation(self, id_: Hashable) -> tuple[str, str, str]:
+        """Return `id_`'s image's NIfTI orientation axis codes (e.g. `("R", "A", "S")`).
+
+        DI-1 addition, additive: real-data inspection of all 260 real
+        MSD Task04_Hippocampus cases (`docs/DATASET_INTEGRATION_GUIDE.md`)
+        found a single, uniform orientation (`"R", "A", "S"`) across every
+        case — not previously checked or documented anywhere in this
+        codebase. Exposed here the same way :meth:`spacing` exposes each
+        case's own header value, rather than assumed constant, since
+        nothing guarantees a future dataset (or a future Hippocampus
+        release) shares this uniformity.
+
+        Returns:
+            The 3-letter axis-code tuple from `nibabel.aff2axcodes` on this
+            case's image affine (e.g. `("R", "A", "S")`).
+        """
+        affine = _load_nifti_affine(self._case_for(id_).image_path)
+        codes = nib.aff2axcodes(affine)  # type: ignore[no-untyped-call]
+        return (str(codes[0]), str(codes[1]), str(codes[2]))
+
+    def verify_integrity(self) -> IntegrityReport:
+        """Check every case in this split for content-level integrity problems.
+
+        DI-1 addition, additive: closes the "integrity checking" gap named
+        in the DI-1 task brief. Checks, per case: image/label readability,
+        image/label shape agreement, image/label finiteness (no NaN/Inf),
+        and that every label voxel value is one this split's own
+        `dataset.json`-declared label map actually names (e.g. only
+        `{0, 1, 2}` for Hippocampus's `{"0": ..., "1": ..., "2": ...}` map)
+        — a garbage/corrupted label file with out-of-range values is
+        caught here even though it would still "read" successfully as a
+        NIfTI file. Mirrors `wfcrc.evaluation.verifier.Verifier`'s own
+        "run every check, collect results, let the caller decide how
+        strict to be" pattern (`IntegrityReport`, `wfcrc/datasets/base.py`)
+        rather than raising on the first problem found — a caller
+        validating an entire real archive wants the complete list of
+        problems, not just the first one.
+
+        Returns:
+            An `IntegrityReport` listing every problem found (empty if the
+            split is fully intact).
+        """
+        allowed_label_values = {int(k) for k in self._task_labels}
+        issues: list[IntegrityIssue] = []
+        for case in self._cases:
+            try:
+                image, _ = _load_nifti_volume(case.image_path)
+            except SerializationError as exc:
+                issues.append(IntegrityIssue(case.id_, f"image unreadable: {exc}"))
+                continue
+            try:
+                # Read the label at its native float dtype, *not* via
+                # `self.raw_labels()` (which casts to `int64`): a NaN cast
+                # to `int64` silently becomes an arbitrary garbage integer
+                # (no `int64` NaN representation exists), which would make
+                # a finiteness check downstream of that cast never able to
+                # detect the very corruption it exists to catch. Checking
+                # the pre-cast float array is what makes this check real.
+                raw_label, _ = _load_nifti_volume(case.label_path)
+            except SerializationError as exc:
+                issues.append(IntegrityIssue(case.id_, f"label unreadable: {exc}"))
+                continue
+
+            if image.shape != raw_label.shape:
+                issues.append(
+                    IntegrityIssue(
+                        case.id_,
+                        f"image/label shape mismatch: {image.shape} vs {raw_label.shape}",
+                    )
+                )
+            if not np.all(np.isfinite(image)):
+                issues.append(IntegrityIssue(case.id_, "image contains NaN/Inf"))
+            if not np.all(np.isfinite(raw_label)):
+                issues.append(IntegrityIssue(case.id_, "label contains NaN/Inf"))
+            elif allowed_label_values:
+                found = {int(v) for v in np.unique(raw_label)}
+                unexpected = sorted(found - allowed_label_values)
+                if unexpected:
+                    issues.append(
+                        IntegrityIssue(
+                            case.id_,
+                            f"label contains value(s) outside the declared label map "
+                            f"{sorted(allowed_label_values)}: {unexpected}",
+                        )
+                    )
+        return IntegrityReport(issues=tuple(issues))
 
     def meta(self) -> dict[str, Any]:
         """Return :data:`~wfcrc.datasets.metadata.DATASET_METADATA`'s record, plus task info."""

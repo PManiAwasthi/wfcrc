@@ -8,18 +8,39 @@ contracts plus the disjointness gate — no concrete loader for any specific
 named dataset (Cityscapes, MSD, ...) is built, since none of the
 Experiment Blueprint's named datasets are available in this environment;
 wiring one in is a later milestone's concern once real data is on hand.
+
+**DI-1 addition (additive, non-breaking — no change to `Dataset`/
+`DatasetLoader`'s existing abstract methods):** :class:`IntegrityIssue`/
+:class:`IntegrityReport` are shared, reusable value types for a concrete
+`Dataset`'s own optional, concrete `verify_integrity()`-style method (first
+adopted by :class:`~wfcrc.datasets.loaders.msd.MSDDataset`, per
+`docs/DATASET_INTEGRATION_GUIDE.md`). They are deliberately **not** added
+as a new abstract method on `Dataset` itself — doing so would force every
+future concrete subclass to implement one, which is an interface
+redesign this project's "additive, backwards-compatible only" discipline
+does not permit without explicit authorization. Any concrete loader may
+adopt this pattern by returning an `IntegrityReport` from its own
+same-named method; nothing in `wfcrc.calibration`/`wfcrc.evaluation`
+depends on it existing.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Hashable, Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-from wfcrc.exceptions import SplitLeakageError
+from wfcrc.exceptions import SerializationError, SplitLeakageError
 
-__all__ = ["Dataset", "DatasetLoader", "SplitManifest", "assert_split_disjoint"]
+__all__ = [
+    "Dataset",
+    "DatasetLoader",
+    "IntegrityIssue",
+    "IntegrityReport",
+    "SplitManifest",
+    "assert_split_disjoint",
+]
 
 
 class Dataset(ABC):
@@ -120,3 +141,53 @@ class SplitManifest:
         object.__setattr__(self, "cal_ids", tuple(self.cal_ids))
         object.__setattr__(self, "test_ids", tuple(self.test_ids))
         assert_split_disjoint(self.train_ids, self.cal_ids, self.test_ids)
+
+
+@dataclass(frozen=True)
+class IntegrityIssue:
+    """One concrete, discrete data-integrity problem found in a `Dataset`.
+
+    Attributes:
+        id_: The example id the problem was found in.
+        problem: A short, human-readable description of the problem
+            (e.g. "image/label shape mismatch: (3,4,5) vs (3,4,6)").
+    """
+
+    id_: Hashable
+    problem: str
+
+
+@dataclass(frozen=True)
+class IntegrityReport:
+    """Aggregate outcome of a `Dataset`'s own `verify_integrity()`-style check.
+
+    Mirrors the shape of `wfcrc.evaluation.verifier.VerificationReport`
+    deliberately (collect every issue, non-strict, with an explicit
+    strict-gate method) — the same "always run every check, then let the
+    caller decide how strict to be" pattern already established there,
+    reused here rather than inventing a second convention.
+
+    Attributes:
+        issues: Every integrity problem found, in the order checked. Empty
+            if the dataset is fully intact.
+    """
+
+    issues: tuple[IntegrityIssue, ...] = field(default_factory=tuple)
+
+    @property
+    def ok(self) -> bool:
+        """Return `True` iff no issue was found."""
+        return len(self.issues) == 0
+
+    def assert_ok(self) -> None:
+        """Raise if any issue was found (the strict gate).
+
+        Raises:
+            SerializationError: Naming every id/problem pair, if
+                :attr:`ok` is `False`. Reuses the frozen `SerializationError`
+                (a data-content problem) rather than adding a new
+                exception type for this additive, dataset-side check.
+        """
+        if not self.ok:
+            detail = "; ".join(f"{issue.id_!r}: {issue.problem}" for issue in self.issues)
+            raise SerializationError(f"dataset integrity check failed: {detail}")

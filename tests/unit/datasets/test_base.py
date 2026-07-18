@@ -5,8 +5,15 @@ from __future__ import annotations
 import pytest
 
 from tests.unit.datasets._helpers import FakeDataset
-from wfcrc.datasets.base import Dataset, DatasetLoader, SplitManifest, assert_split_disjoint
-from wfcrc.exceptions import SplitLeakageError
+from wfcrc.datasets.base import (
+    Dataset,
+    DatasetLoader,
+    IntegrityIssue,
+    IntegrityReport,
+    SplitManifest,
+    assert_split_disjoint,
+)
+from wfcrc.exceptions import SerializationError, SplitLeakageError
 
 
 class _FixedLoader(DatasetLoader):
@@ -81,3 +88,25 @@ def test_split_manifest_coerces_id_sequences_to_tuples() -> None:
 def test_split_manifest_raises_on_overlap() -> None:
     with pytest.raises(SplitLeakageError):
         SplitManifest(train_ids=[1, 2], cal_ids=[2], test_ids=[3])
+
+
+def test_integrity_report_empty_is_ok() -> None:
+    report = IntegrityReport()
+    assert report.ok is True
+    report.assert_ok()  # must not raise
+
+
+def test_integrity_report_with_issues_is_not_ok() -> None:
+    report = IntegrityReport(issues=(IntegrityIssue("case_1", "image contains NaN/Inf"),))
+    assert report.ok is False
+
+
+def test_integrity_report_assert_ok_raises_naming_every_issue() -> None:
+    report = IntegrityReport(
+        issues=(
+            IntegrityIssue("case_1", "image contains NaN/Inf"),
+            IntegrityIssue("case_2", "label unreadable: boom"),
+        )
+    )
+    with pytest.raises(SerializationError, match=r"case_1.*NaN/Inf.*case_2.*unreadable"):
+        report.assert_ok()
