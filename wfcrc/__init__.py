@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from wfcrc._version import __version__
 from wfcrc.exceptions import (
+    BaselineError,
     CacheError,
     ConfigError,
     FamilyError,
@@ -45,6 +46,7 @@ from wfcrc.exceptions import (
 )
 
 __all__ = [
+    "BaselineError",
     "CacheError",
     "ConfigError",
     "FamilyError",

@@ -169,3 +169,25 @@ class RunnerError(WFCRCError):
     Args:
         message: Human-readable description of the failure.
     """
+
+
+class BaselineError(WFCRCError):
+    """Raised for `wfcrc.baselines`-specific failures with no more specific exception.
+
+    Per the MS9 milestone (comparator-baseline implementations behind the
+    common :class:`~wfcrc.baselines.base.Calibrator` interface): covers
+    conditions specific to a baseline's own construction or calibration
+    procedure that are not already one of the frozen exceptions above (e.g.
+    an unknown name looked up in :data:`wfcrc.baselines.base.BASELINES`, or
+    a baseline-specific parameter precondition such as an out-of-range
+    `k_folds` or a fixed dual parameter of the wrong shape for the paired
+    family). Distinct from :class:`FamilyError` (raised by the frozen
+    `wfcrc.ambiguity`/`wfcrc.calibration` machinery a baseline may compose)
+    and from :class:`ConfigError` (frozen config-schema validation) — this
+    is the `wfcrc.baselines` analogue of :class:`RunnerError`, added per
+    the same sanctioned additive-append pattern (new subclass only, no
+    existing exception modified).
+
+    Args:
+        message: Human-readable description of the failure.
+    """
