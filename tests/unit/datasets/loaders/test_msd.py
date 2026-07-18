@@ -387,9 +387,12 @@ def test_dataset_json_without_training_list_raises_serialization_error(tmp_path:
 
 
 def test_unknown_task_raises_value_error(tmp_path: Path) -> None:
+    # DI-2 note: Task07_Pancreas is now a *supported* task, so this uses a
+    # genuinely unregistered MSD task name to exercise the unsupported-task
+    # guard (both Task04_Hippocampus and Task07_Pancreas are registered).
     _build_task(tmp_path, CASE_IDS)
     with pytest.raises(ValueError, match="unsupported MSD task"):
-        MSDNiftiLoader(tmp_path, "Task07_Pancreas", split_manifest=_manifest([], [], []))
+        MSDNiftiLoader(tmp_path, "Task99_Nonexistent", split_manifest=_manifest([], [], []))
 
 
 def test_task_directory_not_found_raises_value_error(tmp_path: Path) -> None:
@@ -671,3 +674,57 @@ def test_duplicate_id_within_a_single_split_raises_value_error(tmp_path: Path) -
     loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=manifest)
     with pytest.raises(ValueError, match="duplicate id"):
         loader.load("train")
+
+
+# --- DI-2: MSD Task07_Pancreas (same loader, new task key) -------------------
+
+PANCREAS_TASK = "Task07_Pancreas"
+PANCREAS_IDS = ["pancreas_001", "pancreas_002", "pancreas_003"]
+
+
+def test_pancreas_task_loads_via_same_loader(tmp_path: Path) -> None:
+    # DI-2: Task07_Pancreas is served by the unchanged MSDNiftiLoader/MSDDataset
+    # -- only a `_TASK_METADATA_KEYS` entry differs. The loader reads the label
+    # vocabulary/name from dataset.json, so the same fixture builder works.
+    _build_task(tmp_path, PANCREAS_IDS, task=PANCREAS_TASK)
+    manifest = _manifest(["pancreas_001"], ["pancreas_002"], ["pancreas_003"])
+    loader = MSDNiftiLoader(tmp_path, PANCREAS_TASK, split_manifest=manifest)
+    train = loader.load("train")
+    assert list(train.ids()) == ["pancreas_001"]
+    _id, image, label = next(iter(train))
+    assert image.ndim == 3
+    assert label.dtype == np.bool_
+
+
+def test_pancreas_meta_key_is_msd_pancreas(tmp_path: Path) -> None:
+    _build_task(tmp_path, PANCREAS_IDS, task=PANCREAS_TASK)
+    loader = MSDNiftiLoader(
+        tmp_path, PANCREAS_TASK, split_manifest=_manifest(["pancreas_001"], [], [])
+    )
+    meta = loader.load("train").meta()
+    assert meta["name"] == "msd_pancreas"
+    assert meta["task"] == PANCREAS_TASK
+    assert DATASET_METADATA["msd_pancreas"].license == meta["license"]
+
+
+def test_pancreas_verify_integrity_clean(tmp_path: Path) -> None:
+    _build_task(tmp_path, PANCREAS_IDS, task=PANCREAS_TASK)
+    loader = MSDNiftiLoader(tmp_path, PANCREAS_TASK, split_manifest=_manifest(PANCREAS_IDS, [], []))
+    assert loader.load("train").verify_integrity().ok is True
+
+
+def test_verify_integrity_empty_label_vocab_skips_vocab_check(tmp_path: Path) -> None:
+    # DI-2 coverage: a dataset.json with no declared "labels" map leaves the
+    # allowed-value set empty, so verify_integrity skips the label-vocabulary
+    # check (but still validates readability/shape/finiteness).
+    task_dir = tmp_path / TASK
+    _write_volume(task_dir / "imagesTr" / "case_a.nii.gz", np.zeros((4, 5, 6)), SPACING)
+    _write_volume(task_dir / "labelsTr" / "case_a.nii.gz", np.zeros((4, 5, 6)), SPACING)
+    dataset_json = {
+        "labels": {},
+        "training": [{"image": "./imagesTr/case_a.nii.gz", "label": "./labelsTr/case_a.nii.gz"}],
+        "test": [],
+    }
+    (task_dir / "dataset.json").write_text(json.dumps(dataset_json), encoding="utf-8")
+    loader = MSDNiftiLoader(tmp_path, TASK, split_manifest=_manifest(["case_a"], [], []))
+    assert loader.load("train").verify_integrity().ok is True

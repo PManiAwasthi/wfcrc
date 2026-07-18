@@ -308,6 +308,56 @@ behavior changed):
 No existing public method's signature, return type, or documented
 behavior changed. `MSDNiftiLoader`'s own constructor/`.load()` interface
 is completely unchanged.
+
+**10 · DI-2: MSD Task07_Pancreas — real-data validated, zero code change
+beyond one `_TASK_METADATA_KEYS` entry.** Per the DI-2 milestone (extend the
+DI-1 standard to every remaining Phase-A dataset) and
+`docs/DATASET_INTEGRATION_GUIDE.md` §6's own "zero architectural change"
+assessment, MSD Task07_Pancreas was added by registering
+`"Task07_Pancreas" -> "msd_pancreas"` in `_TASK_METADATA_KEYS` — no new
+class, method, or branch. Its real, locally-acquired archive
+(`datasets/Task07_Pancreas/`) was independently audited against the DI-1
+§3 ten-point checklist, and every claim confirmed:
+
+- **Counts.** `dataset.json` declares `numTraining: 281`, `numTest: 139`;
+  on-disk `imagesTr`/`labelsTr` each hold exactly 281 `.nii.gz` files
+  (excluding harmless macOS `._*`/`.DS_Store` AppleDouble cruft, never
+  discovered since discovery follows only `dataset.json`'s listed paths —
+  identical to §8's Hippocampus finding). Resolves
+  `docs/DATASET_SPLIT_POLICY.md` §8 item 4's previously-open Pancreas
+  count-verification item.
+- **Schema.** Standard MSD `dataset.json`: modality `{"0": "CT"}`
+  (single-modality, no channel axis — same rank as Hippocampus's MRI),
+  labels `{"0": "background", "1": "pancreas", "2": "cancer"}`. The
+  upstream `"relase"` typo (§1) is present here too, and equally unread.
+- **Binarization.** `labels()` returns `raw > 0` = pancreas + cancer (the
+  organ-plus-lesion foreground), the direct analogue of Hippocampus's
+  organ foreground (§4); the pancreas-vs-cancer distinction is preserved,
+  unbinarized, via `raw_labels()` (values exactly `{0, 1, 2}` confirmed
+  across sampled cases) for a future Group Mask Builder (MS6.7), matching
+  the Anterior/Posterior precedent exactly.
+- **Per-case geometry — differs from Hippocampus, confirming the
+  no-auto-resample design (§5).** Unlike Hippocampus's uniform isotropic
+  `(1.0, 1.0, 1.0)` mm spacing, real Pancreas volumes are **anisotropic
+  and non-uniform across cases** (e.g. `(0.92, 0.92, 2.5)`,
+  `(0.87, 0.87, 2.5)`, `(0.77, 0.77, 2.5)` mm — in-plane spacing varies
+  per case, through-plane is a coarser `2.5` mm), with large, variable
+  volumes (`512 x 512 x {84..126+}`) and raw CT Hounsfield-unit
+  intensities (range roughly `[-1024, +1730]`). This is direct real-data
+  confirmation that :meth:`MSDDataset.spacing` reporting each case's own
+  header value (never a dataset-wide constant) is load-bearing, not
+  incidental — the uniformity §8 found for Hippocampus is a property of
+  *that* task, not of this loader.
+- **Integrity.** :meth:`MSDDataset.verify_integrity` on sampled cases
+  reports `ok=True` (image/label readable, shapes agree, finite, label
+  values within the declared `{0, 1, 2}` vocabulary). The
+  label-vocabulary check reads `self._task_labels` from `dataset.json`, so
+  it validated Pancreas's `{0, 1, 2}` with no code change.
+
+Per `docs/MODEL_POLICY.md` §1.1, Pancreas's base model (nnU-Net-style,
+externally trained) and `docs/DATASET_SPLIT_POLICY.md` §3.2's severe
+class-imbalance per-class-representation check remain future work — DI-2
+delivers the loader only, not a model, split, or experiment.
 """
 
 from __future__ import annotations
@@ -327,32 +377,40 @@ from wfcrc.datasets.base import (
     DatasetLoader,
     IntegrityIssue,
     IntegrityReport,
-    SplitManifest,
+)
+from wfcrc.datasets.loaders._split_support import (
+    MANIFEST_FIELD,
+    SPLIT_NAMES,
+    build_manifest,
+    read_split_manifest,
+    validate_manifest_ids,
 )
 from wfcrc.datasets.metadata import DATASET_METADATA
 from wfcrc.exceptions import SerializationError
 
 __all__ = ["MSDDataset", "MSDNiftiLoader"]
 
-#: MSD task name -> `wfcrc.datasets.metadata.DATASET_METADATA` key. MS6.3A
-#: implements and real-data-validates only `"Task04_Hippocampus"` (module
-#: docstring §1); the discovery/pairing/split machinery is already
+#: MSD task name -> `wfcrc.datasets.metadata.DATASET_METADATA` key. The
+#: discovery/pairing/split/integrity machinery is entirely
 #: task-format-generic (MS6 Architecture Specification §3.3's own
-#: requirement to support `Task07_Pancreas` later "without introducing a
-#: second loader architecture") — adding Pancreas later is one dict entry,
-#: not a redesign, once its own real-data integration is authorized.
+#: requirement to support `Task07_Pancreas` "without introducing a second
+#: loader architecture"; `docs/DATASET_INTEGRATION_GUIDE.md` §6's "zero
+#: architectural change" assessment): the label vocabulary, class names,
+#: modality, and case list are all read from each task's own
+#: `dataset.json` at discovery time, never hardcoded, so a new MSD task is
+#: exactly one entry here plus its own `DATASET_METADATA` record — not a
+#: redesign.
+#:
+#: - `"Task04_Hippocampus"` (MRI, labels `{0: background, 1: Anterior,
+#:   2: Posterior}`) — MS6.3A / DI-1 reference implementation, real-data
+#:   validated (260 labelled cases; module docstring §1, §8, §9).
+#: - `"Task07_Pancreas"` (DI-2, CT, labels `{0: background, 1: pancreas,
+#:   2: cancer}`) — real-data validated in DI-2 (281 labelled cases,
+#:   module docstring §10). Reuses this loader unchanged; the only
+#:   task-specific fact is this dict entry and its metadata key.
 _TASK_METADATA_KEYS: dict[str, str] = {
     "Task04_Hippocampus": "msd_hippocampus",
-}
-
-#: The three split names this loader (and the frozen `SplitManifest`) recognizes.
-_SPLIT_NAMES: tuple[str, ...] = ("train", "calibration", "test")
-
-#: `SplitManifest` field name for each split name above.
-_MANIFEST_FIELD: dict[str, str] = {
-    "train": "train_ids",
-    "calibration": "cal_ids",
-    "test": "test_ids",
+    "Task07_Pancreas": "msd_pancreas",
 }
 
 
@@ -717,13 +775,13 @@ class MSDNiftiLoader(DatasetLoader):
         self._task_labels: dict[str, Any] = dict(dataset_json.get("labels", {}))
         self._cases: dict[str, _MSDCase] = self._discover_cases(dataset_json, task_dir)
 
-        manifest_dict = self._read_split_manifest(split_manifest)
-        self._validate_manifest_ids(manifest_dict)
-        self._manifest = SplitManifest(
-            train_ids=tuple(manifest_dict["train"]),
-            cal_ids=tuple(manifest_dict["calibration"]),
-            test_ids=tuple(manifest_dict["test"]),
+        manifest_dict = read_split_manifest(split_manifest)
+        validate_manifest_ids(
+            manifest_dict,
+            list(self._cases),
+            pool_description=f"{self._task} training pool",
         )
+        self._manifest = build_manifest(manifest_dict)
 
     @staticmethod
     def _read_dataset_json(task_dir: Path) -> Mapping[str, Any]:
@@ -778,48 +836,6 @@ class MSDNiftiLoader(DatasetLoader):
             cases[image_id] = _MSDCase(id_=image_id, image_path=image_path, label_path=label_path)
         return cases
 
-    @staticmethod
-    def _read_split_manifest(
-        source: Mapping[str, Sequence[Hashable]] | str | Path,
-    ) -> dict[str, list[str]]:
-        """Load and shape-validate a `split_manifest` (mapping or JSON file path)."""
-        if isinstance(source, (str, Path)):
-            path = Path(source)
-            if not path.is_file():
-                raise ValueError(f"split manifest file not found: {path}")
-            try:
-                with path.open(encoding="utf-8") as handle:
-                    raw: Any = json.load(handle)
-            except (OSError, json.JSONDecodeError) as exc:
-                raise SerializationError(
-                    f"could not read/parse split manifest {path}: {exc}"
-                ) from exc
-        else:
-            raw = source
-        if not isinstance(raw, Mapping):
-            raise ValueError(
-                f"split_manifest must be a mapping of {list(_SPLIT_NAMES)} to id lists "
-                f"(or a path to a JSON file with that shape), got {type(raw)}"
-            )
-        missing = [name for name in _SPLIT_NAMES if name not in raw]
-        if missing:
-            raise ValueError(f"split_manifest is missing required split(s): {missing}")
-        extra = sorted(set(raw) - set(_SPLIT_NAMES))
-        if extra:
-            raise ValueError(f"split_manifest has unrecognized split name(s): {extra}")
-        return {name: [str(i) for i in raw[name]] for name in _SPLIT_NAMES}
-
-    def _validate_manifest_ids(self, manifest_dict: Mapping[str, Sequence[str]]) -> None:
-        """Ensure every `split_manifest` id resolves to a discovered labelled case."""
-        known = set(self._cases)
-        for split_name, ids in manifest_dict.items():
-            unknown = sorted(set(ids) - known)
-            if unknown:
-                raise ValueError(
-                    f"split_manifest '{split_name}' references id(s) not present in the "
-                    f"discovered {self._task} training pool: {unknown}"
-                )
-
     def load(self, split_name: str) -> Dataset:
         """Load the named split (`"train"`, `"calibration"`, or `"test"`).
 
@@ -833,9 +849,9 @@ class MSDNiftiLoader(DatasetLoader):
             ValueError: If `split_name` is not one of the three recognized
                 split names.
         """
-        if split_name not in _SPLIT_NAMES:
-            raise ValueError(f"split_name must be one of {_SPLIT_NAMES}, got {split_name!r}")
-        ids = getattr(self._manifest, _MANIFEST_FIELD[split_name])
+        if split_name not in SPLIT_NAMES:
+            raise ValueError(f"split_name must be one of {SPLIT_NAMES}, got {split_name!r}")
+        ids = getattr(self._manifest, MANIFEST_FIELD[split_name])
         cases = tuple(self._cases[i] for i in ids)
         return MSDDataset(
             cases,
