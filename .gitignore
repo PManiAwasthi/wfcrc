@@ -218,3 +218,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 PROJECT_CONTEXT.md
+
+# MS6.3A real-data validation: local dataset cache directories (Dataset
+# Selection Audit §5 convention: data/<name>/; this repo also observed a
+# real MSD Task04_Hippocampus archive extracted under datasets/). Licensed/
+# large downloaded research data must never be committed.
+/data/
+/datasets/

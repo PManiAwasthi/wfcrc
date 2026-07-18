@@ -12,3 +12,12 @@ imagecorruptions>=1.1.2,<2
 # MS6.2 Resolution Pass: directly imported for the impulse_noise
 # compatibility path (see wfcrc/datasets/corruptions.py).
 scikit-image>=0.24,<1
+# MS6.3A: NIfTI I/O for the MSD/NIfTI dataset loader (wfcrc/datasets/loaders/msd.py).
+nibabel>=5.2,<6
+# MS7 (frozen Q1): DL runtime, confined to wfcrc/models/. Install the
+# CPU-only build explicitly, e.g.:
+#   pip install "torch>=2.10,<3" --index-url https://download.pytorch.org/whl/cpu
+# Plain `pip install -r requirements/base.txt` will still resolve *a* torch
+# build (usually CPU-only on non-CUDA systems already, but not guaranteed),
+# since PEP 508 dependency specs cannot embed an alternate index URL.
+torch>=2.10,<3

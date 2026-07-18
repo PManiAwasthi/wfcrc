@@ -35,6 +35,22 @@ dependencies = [
   # modern scikit-image); pinned to the range actually validated for
   # bit-identical/equivalence behavior (see corruptions.py's docstring).
   "scikit-image>=0.24,<1",
+  # MS6.3A: NIfTI I/O for wfcrc.datasets.loaders.msd (MSDNiftiLoader). The
+  # smallest adequate reader for this job — pure Python + numpy, no compiled
+  # medical-imaging framework (SimpleITK/ITK was evaluated and rejected as
+  # unnecessarily heavy for "read a .nii.gz array + header spacing"); see
+  # wfcrc/datasets/loaders/msd.py's module docstring for the full Task 1
+  # dependency-evaluation record.
+  "nibabel>=5.2,<6",
+  # MS7 (frozen Q1, MS6_ARCHITECTURE_SPEC.md §8.1): the deep-learning
+  # runtime for wfcrc/models/ Score Providers/checkpoints ONLY — must never
+  # be imported by wfcrc.calibration/.ambiguity/.losses/.prediction_sets/
+  # .evaluation/.runner, which remain NumPy-only. Install the CPU-only
+  # build (`pip install torch --index-url https://download.pytorch.org/whl/cpu`)
+  # — plain PyPI `torch` can otherwise resolve a CUDA-bundled build; this
+  # project has no GPU dependency anywhere and CPU-only keeps the install
+  # small and reproducible. See requirements/base.txt for the exact command.
+  "torch>=2.10,<3",
 ]
 
 [project.optional-dependencies]
@@ -117,8 +133,15 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra --strict-markers --strict-config --cov=wfcrc --cov-report=term-missing"
+addopts = "-ra --strict-markers --strict-config --cov=wfcrc --cov-report=term-missing -m 'not real_data'"
 testpaths = ["tests"]
+markers = [
+  # MS6 Q3 (frozen, MS6_ARCHITECTURE_SPEC.md §8.3): real-data integration
+  # tests require a real downloaded dataset/checkpoint, network access, or
+  # GPU, and are excluded from the default suite/CI by the `-m 'not
+  # real_data'` addopts above. Run explicitly with `pytest -m real_data`.
+  "real_data: opt-in integration test requiring real downloaded data (excluded by default)",
+]
 
 [tool.coverage.run]
 branch = true
