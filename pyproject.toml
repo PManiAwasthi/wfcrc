@@ -17,7 +17,25 @@ classifiers = [
   "Operating System :: OS Independent",
   "Typing :: Typed",
 ]
-dependencies = ["numpy>=1.26,<3", "pyyaml>=6.0,<7", "matplotlib>=3.8,<4"]
+dependencies = [
+  "numpy>=1.26,<3",
+  "pyyaml>=6.0,<7",
+  "matplotlib>=3.8,<4",
+  # MS6.2 (frozen Q2): reference implementation for the Cityscapes-C
+  # corruption protocol. No numpy/stdlib alternative provides the
+  # Hendrycks-Dietterich corruption suite this project's frozen Experiment
+  # Blueprint / Dataset Selection Audit require; see
+  # wfcrc/datasets/corruptions.py's module docstring for the verified,
+  # partial (12/15) compatibility of this pinned version against a modern
+  # numpy/scikit-image stack.
+  "imagecorruptions>=1.1.2,<2",
+  # MS6.2 Resolution Pass (Task 1/3): wfcrc.datasets.corruptions imports
+  # skimage.util.random_noise directly for the impulse_noise compatibility
+  # path (imagecorruptions==1.1.2's own call is not seed-controllable on
+  # modern scikit-image); pinned to the range actually validated for
+  # bit-identical/equivalence behavior (see corruptions.py's docstring).
+  "scikit-image>=0.24,<1",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -87,6 +105,14 @@ plugins = []
 
 [[tool.mypy.overrides]]
 module = "yaml.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "imagecorruptions.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "skimage.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

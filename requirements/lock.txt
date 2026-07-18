@@ -20,9 +20,12 @@ ghp-import==2.1.0
 griffelib==2.1.0
 identify==2.6.19
 idna==3.18
+imagecorruptions==1.1.2
+ImageIO==2.37.3
 iniconfig==2.3.0
 Jinja2==3.1.6
 kiwisolver==1.5.0
+lazy-loader==0.5
 librt==0.13.0
 Markdown==3.10.2
 MarkupSafe==3.0.3
@@ -37,8 +40,10 @@ mkdocstrings-python==2.0.5
 mkdocstrings==1.0.6
 mypy==2.3.0
 mypy_extensions==1.1.0
+networkx==3.6.1
 nodeenv==1.10.0
 numpy==2.5.1
+opencv-python==5.0.0.93
 packaging==26.0
 paginate==0.5.7
 pathspec==1.1.1
@@ -58,8 +63,11 @@ PyYAML==6.0.3
 pyyaml_env_tag==1.1
 requests==2.34.2
 ruff==0.15.21
+scikit-image==0.24.0
+scipy==1.18.0
 setuptools==83.0.0
 six==1.17.0
+tifffile==2026.7.14
 types-PyYAML==6.0.12.20260518
 typing_extensions==4.16.0
 urllib3==2.7.0

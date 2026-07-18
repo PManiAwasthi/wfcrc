@@ -138,6 +138,22 @@ class SplitLeakageError(WFCRCError):
     """
 
 
+class PreprocessingError(WFCRCError):
+    """Raised for invalid inputs to :mod:`wfcrc.datasets.preprocessing`/
+    :mod:`wfcrc.datasets.corruptions` (MS6.2).
+
+    Covers invalid resize/normalize/resample parameters (non-positive
+    target sizes or spacings, mismatched mean/std channel counts, wrong
+    array rank) and invalid corruption requests (an unknown corruption
+    name, an out-of-range severity, or an image not in the raw
+    ``uint8`` pixel format the corruption suite requires) — the
+    ``wfcrc.datasets`` preprocessing analogue of :class:`SetConstructionError`.
+
+    Args:
+        message: Human-readable description of the invalid input.
+    """
+
+
 class RunnerError(WFCRCError):
     """Raised for `wfcrc.runner`-specific failures with no more specific exception.
 

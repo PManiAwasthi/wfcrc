@@ -3,3 +3,12 @@
 numpy>=1.26,<3
 pyyaml>=6.0,<7
 matplotlib>=3.8,<4
+# MS6.2 (frozen Q2): Cityscapes-C corruption protocol reference implementation.
+# Note: imagecorruptions==1.1.2 imports pkg_resources at module load time
+# (undeclared in its own metadata); wfcrc/datasets/corruptions.py installs a
+# stdlib-only shim for this rather than pinning setuptools (MS6.2 Resolution
+# Pass, Task 4) — no setuptools version constraint is needed.
+imagecorruptions>=1.1.2,<2
+# MS6.2 Resolution Pass: directly imported for the impulse_noise
+# compatibility path (see wfcrc/datasets/corruptions.py).
+scikit-image>=0.24,<1
